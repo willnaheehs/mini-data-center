@@ -10,20 +10,27 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
 QUEUE_NAME = os.getenv("QUEUE_NAME", "jobs")
 WORKER_NAME = os.getenv("WORKER_NAME", os.uname().nodename)
+NODE_NAME = os.getenv("NODE_NAME", os.uname().nodename)
 RESULTS_PATH = os.getenv("RESULTS_PATH", "/data/job_results.csv")
+BUSY_KEY = os.getenv("BUSY_KEY", f"busy-{WORKER_NAME}")
+BUSY_KEY_TTL_SEC = int(os.getenv("BUSY_KEY_TTL_SEC", "300"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 CSV_FIELDS = [
     "job_id",
     "job_type",
-    "worker_node",
-    "submitted_at",
-    "started_at",
-    "finished_at",
-    "queue_wait_sec",
-    "execution_sec",
-    "total_latency_sec",
+    "policy",
+    "target_worker",
+    "target_queue",
+    "worker_name",
+    "node_name",
+    "submit_time",
+    "start_time",
+    "finish_time",
+    "wait_time",
+    "service_time",
+    "total_time",
     "status",
     "result_summary",
 ]
@@ -51,50 +58,68 @@ def append_result_row(row: dict):
         writer.writerow(row)
 
 
-def write_failed_result(job, started_at: datetime, error_msg: str):
-    finished_at = datetime.now(timezone.utc)
+def set_worker_busy(is_busy: bool):
+    if is_busy:
+        r.set(BUSY_KEY, 1, ex=BUSY_KEY_TTL_SEC)
+    else:
+        r.set(BUSY_KEY, 0)
 
-    submitted_at_str = job.get("submitted_at", "")
-    job_id = job.get("job_id", "unknown")
-    job_type = job.get("job_type", "unknown")
 
-    queue_wait_sec = ""
-    total_latency_sec = ""
+def get_submit_time(job: dict) -> str:
+    return job.get("submit_time") or job.get("submitted_at", "")
 
-    if submitted_at_str:
+
+def build_result_row(job: dict, started_at: datetime, finished_at: datetime, status: str, result_summary: str):
+    submit_time_str = get_submit_time(job)
+    wait_time = ""
+    total_time = ""
+
+    if submit_time_str:
         try:
-            submitted_dt = parse_iso(submitted_at_str)
-            queue_wait_sec = (started_at - submitted_dt).total_seconds()
-            total_latency_sec = (finished_at - submitted_dt).total_seconds()
+            submitted_dt = parse_iso(submit_time_str)
+            wait_time = (started_at - submitted_dt).total_seconds()
+            total_time = (finished_at - submitted_dt).total_seconds()
         except Exception:
             pass
 
-    row = {
-        "job_id": job_id,
-        "job_type": job_type,
-        "worker_node": WORKER_NAME,
-        "submitted_at": submitted_at_str,
-        "started_at": started_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-        "queue_wait_sec": queue_wait_sec,
-        "execution_sec": (finished_at - started_at).total_seconds(),
-        "total_latency_sec": total_latency_sec,
-        "status": "failed",
-        "result_summary": error_msg,
+    return {
+        "job_id": job.get("job_id", "unknown"),
+        "job_type": job.get("job_type", "unknown"),
+        "policy": job.get("policy", "unknown"),
+        "target_worker": job.get("target_worker", ""),
+        "target_queue": job.get("target_queue", QUEUE_NAME),
+        "worker_name": WORKER_NAME,
+        "node_name": NODE_NAME,
+        "submit_time": submit_time_str,
+        "start_time": started_at.isoformat(),
+        "finish_time": finished_at.isoformat(),
+        "wait_time": wait_time,
+        "service_time": (finished_at - started_at).total_seconds(),
+        "total_time": total_time,
+        "status": status,
+        "result_summary": result_summary,
     }
+
+
+def write_failed_result(job, started_at: datetime, error_msg: str):
+    finished_at = datetime.now(timezone.utc)
+    row = build_result_row(job, started_at, finished_at, "failed", error_msg)
     append_result_row(row)
 
 
 def validate_job(job: dict):
-    required_keys = ["job_id", "job_type", "submitted_at", "params"]
+    required_keys = ["job_id", "job_type", "params"]
     for key in required_keys:
         if key not in job:
             raise ValueError(f"missing required field: {key}")
 
+    if not get_submit_time(job):
+        raise ValueError("missing submit_time/submitted_at")
+
     if not isinstance(job["params"], dict):
         raise ValueError("params must be a dictionary")
 
-    parse_iso(job["submitted_at"])
+    parse_iso(get_submit_time(job))
 
     if job["job_type"] == "sleep":
         if "duration_sec" not in job["params"]:
@@ -120,36 +145,27 @@ def validate_job(job: dict):
 
 def process_sleep_job(job: dict):
     duration = job["params"]["duration_sec"]
-    submitted_dt = parse_iso(job["submitted_at"])
     started_at = datetime.now(timezone.utc)
 
-    print(f"Worker {WORKER_NAME} received job {job['job_id']} of type sleep")
+    print(
+        f"Worker {WORKER_NAME} received sleep job {job['job_id']} from queue {QUEUE_NAME} "
+        f"targeted for {job.get('target_worker', 'unknown')}"
+    )
     print(f"Worker {WORKER_NAME} starting sleep job {job['job_id']} for {duration} sec")
 
     time.sleep(duration)
 
     finished_at = datetime.now(timezone.utc)
-
-    queue_wait_sec = (started_at - submitted_dt).total_seconds()
-    execution_sec = (finished_at - started_at).total_seconds()
-    total_latency_sec = (finished_at - submitted_dt).total_seconds()
-
-    row = {
-        "job_id": job["job_id"],
-        "job_type": job["job_type"],
-        "worker_node": WORKER_NAME,
-        "submitted_at": job["submitted_at"],
-        "started_at": started_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-        "queue_wait_sec": queue_wait_sec,
-        "execution_sec": execution_sec,
-        "total_latency_sec": total_latency_sec,
-        "status": "completed",
-        "result_summary": f"slept for {duration} seconds",
-    }
+    row = build_result_row(
+        job,
+        started_at,
+        finished_at,
+        "completed",
+        f"slept for {duration} seconds",
+    )
     append_result_row(row)
 
-    print(f"Worker {WORKER_NAME} finished sleep job {job['job_id']} in {execution_sec:.2f} sec")
+    print(f"Worker {WORKER_NAME} finished sleep job {job['job_id']} in {row['service_time']:.2f} sec")
 
 
 def is_prime(n: int) -> bool:
@@ -169,10 +185,12 @@ def is_prime(n: int) -> bool:
 
 def process_cpu_job(job: dict):
     work_units = job["params"]["work_units"]
-    submitted_dt = parse_iso(job["submitted_at"])
     started_at = datetime.now(timezone.utc)
 
-    print(f"Worker {WORKER_NAME} received job {job['job_id']} of type cpu")
+    print(
+        f"Worker {WORKER_NAME} received cpu job {job['job_id']} from queue {QUEUE_NAME} "
+        f"targeted for {job.get('target_worker', 'unknown')}"
+    )
     print(f"Worker {WORKER_NAME} starting cpu job {job['job_id']} with work_units={work_units}")
 
     prime_count = 0
@@ -181,36 +199,27 @@ def process_cpu_job(job: dict):
             prime_count += 1
 
     finished_at = datetime.now(timezone.utc)
-
-    queue_wait_sec = (started_at - submitted_dt).total_seconds()
-    execution_sec = (finished_at - started_at).total_seconds()
-    total_latency_sec = (finished_at - submitted_dt).total_seconds()
-
-    row = {
-        "job_id": job["job_id"],
-        "job_type": job["job_type"],
-        "worker_node": WORKER_NAME,
-        "submitted_at": job["submitted_at"],
-        "started_at": started_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-        "queue_wait_sec": queue_wait_sec,
-        "execution_sec": execution_sec,
-        "total_latency_sec": total_latency_sec,
-        "status": "completed",
-        "result_summary": f"counted {prime_count} primes up to {work_units}",
-    }
+    row = build_result_row(
+        job,
+        started_at,
+        finished_at,
+        "completed",
+        f"counted {prime_count} primes up to {work_units}",
+    )
     append_result_row(row)
 
-    print(f"Worker {WORKER_NAME} finished cpu job {job['job_id']} in {execution_sec:.2f} sec")
+    print(f"Worker {WORKER_NAME} finished cpu job {job['job_id']} in {row['service_time']:.2f} sec")
 
 
 def main():
     ensure_results_file()
-    print(f"Worker {WORKER_NAME} listening on queue '{QUEUE_NAME}'")
+    set_worker_busy(False)
+    print(f"Worker {WORKER_NAME} listening on queue '{QUEUE_NAME}' with busy key '{BUSY_KEY}'")
 
     while True:
         _, raw_job = r.brpop(QUEUE_NAME)
         started_at = datetime.now(timezone.utc)
+        set_worker_busy(True)
 
         try:
             job = json.loads(raw_job)
@@ -231,6 +240,8 @@ def main():
                 parsed_job = {"raw_job": str(raw_job)}
 
             write_failed_result(parsed_job, started_at, error_msg)
+        finally:
+            set_worker_busy(False)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-          kubernetes.io/hostname: node1-control
+        kubernetes.io/hostname: node1-control
       containers:
         - name: dispatcher
           image: williamsdock/mini-dc-dispatcher:v6
@@ -16,5 +16,13 @@ spec:
               value: "redis"
             - name: REDIS_PORT_NUM
               value: "6379"
-            - name: QUEUE_NAME
-              value: "jobs"
+            - name: ROUTING_POLICY
+              value: "round_robin"
+            - name: QUEUE_NODE2
+              value: "jobs-node2"
+            - name: QUEUE_NODE3
+              value: "jobs-node3"
+            - name: BUSY_KEY_NODE2
+              value: "busy-node2"
+            - name: BUSY_KEY_NODE3
+              value: "busy-node3"

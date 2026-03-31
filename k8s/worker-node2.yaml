@@ -23,14 +23,16 @@ spec:
             - name: REDIS_PORT_NUM
               value: "6379"
             - name: QUEUE_NAME
-              value: "jobs"
+              value: "jobs-node2"
             - name: WORKER_NAME
               value: "node2-worker"
+            - name: BUSY_KEY
+              value: "busy-node2"
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: LOG_FILE
+            - name: RESULTS_PATH
               value: "/data/job_results.csv"
           volumeMounts:
             - name: job-logs
