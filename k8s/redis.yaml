@@ -13,7 +13,7 @@ spec:
         app: redis
     spec:
       nodeSelector:
-        role: control-plane
+        kubernetes.io/hostname: node1-control
       containers:
         - name: redis
           image: redis:7

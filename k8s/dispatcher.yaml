@@ -10,7 +10,7 @@ spec:
         kubernetes.io/hostname: node1-control
       containers:
         - name: dispatcher
-          image: williamsdock/mini-dc-dispatcher:v6
+          image: williamsdock/mini-dc-dispatcher:v7
           env:
             - name: REDIS_HOST
               value: "redis"
