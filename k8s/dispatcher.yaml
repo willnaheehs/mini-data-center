@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dispatcher
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+          kubernetes.io/hostname: node1-control
+      containers:
+        - name: dispatcher
+          image: williamsdock/mini-dc-dispatcher:v6
+          env:
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT_NUM
+              value: "6379"
+            - name: QUEUE_NAME
+              value: "jobs"
