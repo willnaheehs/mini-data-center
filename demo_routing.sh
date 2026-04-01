@@ -37,17 +37,28 @@ section "Delete any previous demo job"
 kubectl delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found=true
 
 section "Create fresh dispatcher job with selected routing policy"
-kubectl create job "$JOB_NAME" --from=job/dispatcher -n "$NAMESPACE" --dry-run=client -o yaml \
-  | python3 -c '
+python3 - <<'PY' "$POLICY" "$NAMESPACE" "$JOB_NAME" "$(dirname "$0")/k8s/dispatcher.yaml" | kubectl apply -f -
 import sys, yaml
-obj = yaml.safe_load(sys.stdin.read())
-container = obj["spec"]["template"]["spec"]["containers"][0]
-for env in container.get("env", []):
-    if env.get("name") == "ROUTING_POLICY":
-        env["value"] = sys.argv[1]
-print(yaml.safe_dump(obj, sort_keys=False))
-' "$POLICY" \
-  | kubectl apply -f -
+policy, namespace, job_name, manifest_path = sys.argv[1:5]
+with open(manifest_path, 'r', encoding='utf-8') as f:
+    src = yaml.safe_load(f)
+container = src['spec']['template']['spec']['containers'][0]
+for env in container.get('env', []):
+    if env.get('name') == 'ROUTING_POLICY':
+        env['value'] = policy
+job = {
+    'apiVersion': 'batch/v1',
+    'kind': 'Job',
+    'metadata': {
+        'name': job_name,
+        'namespace': namespace,
+    },
+    'spec': {
+        'template': src['spec']['template']
+    }
+}
+print(yaml.safe_dump(job, sort_keys=False))
+PY
 
 section "Wait for dispatcher job to complete"
 kubectl wait --for=condition=complete job/"$JOB_NAME" -n "$NAMESPACE" --timeout=180s
