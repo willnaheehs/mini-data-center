@@ -3,8 +3,47 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-openclaw-dev}"
 KUBECONFIG_PATH="${KUBECONFIG:-/home/openclaw/.kube/config}"
-POLICY="${1:-round_robin}"
+POLICY="round_robin"
 JOB_NAME="dispatcher-demo"
+CLEAR_RESULTS=0
+CAPTURE_OUTPUT=0
+OUTPUT_DIR="$(dirname "$0")/demo-output"
+
+usage() {
+  cat <<EOF
+Usage: $0 [round_robin|state_aware] [--clear-results] [--capture-output]
+
+Options:
+  --clear-results   remove /data/job_results.csv on both workers before the run
+  --capture-output  save full script output under demo-output/
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    round_robin|state_aware)
+      POLICY="$1"
+      shift
+      ;;
+    --clear-results)
+      CLEAR_RESULTS=1
+      shift
+      ;;
+    --capture-output)
+      CAPTURE_OUTPUT=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 export KUBECONFIG="$KUBECONFIG_PATH"
 
@@ -18,6 +57,13 @@ need() {
 need kubectl
 need python3
 
+if [[ "$CAPTURE_OUTPUT" -eq 1 ]]; then
+  mkdir -p "$OUTPUT_DIR"
+  RUN_STAMP="$(date +%Y%m%d-%H%M%S)"
+  LOG_PATH="$OUTPUT_DIR/${RUN_STAMP}-${POLICY}.log"
+  exec > >(tee "$LOG_PATH") 2>&1
+fi
+
 section() {
   echo
   echo "=================================================================="
@@ -29,9 +75,18 @@ section "Mini data center routing demo"
 echo "Namespace : $NAMESPACE"
 echo "KUBECONFIG: $KUBECONFIG"
 echo "Policy    : $POLICY"
+if [[ "$CAPTURE_OUTPUT" -eq 1 ]]; then
+  echo "Output log: $LOG_PATH"
+fi
 
 section "Current pods"
 kubectl get pods -n "$NAMESPACE" -o wide
+
+if [[ "$CLEAR_RESULTS" -eq 1 ]]; then
+  section "Clear persisted CSV files on both workers"
+  kubectl exec -n "$NAMESPACE" deploy/worker-node2 -- sh -c 'rm -f /data/job_results.csv && echo cleared node2'
+  kubectl exec -n "$NAMESPACE" deploy/worker-node3 -- sh -c 'rm -f /data/job_results.csv && echo cleared node3'
+fi
 
 section "Delete any previous demo job"
 kubectl delete job "$JOB_NAME" -n "$NAMESPACE" --ignore-not-found=true
@@ -80,4 +135,6 @@ kubectl exec -n "$NAMESPACE" deploy/worker-node3 -- cat /data/job_results.csv
 
 section "Summary"
 echo "Demo finished successfully."
-echo "If you want a cleaner before/after dataset, clear /data/job_results.csv on both workers before rerunning."
+if [[ "$CAPTURE_OUTPUT" -eq 1 ]]; then
+  echo "Saved full output to: $LOG_PATH"
+fi
