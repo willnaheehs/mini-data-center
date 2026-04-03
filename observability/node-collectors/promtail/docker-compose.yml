@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /tmp/mini-dc-logs:/tmp/mini-dc-logs:ro
+      - /tmp:/tmp

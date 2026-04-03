@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: node-exporters
+    static_configs:
+      - targets:
+          - node1-control:9100
+          - node2-worker:9100
+          - node3-worker:9100
+        labels:
+          cluster: mini-data-center
+
+  - job_name: pushgateway
+    static_configs:
+      - targets:
+          - pushgateway:9091
+        labels:
+          cluster: mini-data-center
+          component: dispatcher-metrics
+
+  # Worker metrics targets to enable after worker instrumentation + Services exist.
+  # Replace hostnames/ports if your final Service names differ.
+  # Enable this after the worker metrics Services are deployed and reachable from Prometheus.
+  - job_name: mini-dc-workers
+    static_configs:
+      - targets:
+          - worker-node2-metrics:8002
+          - worker-node3-metrics:8002
+        labels:
+          cluster: mini-data-center
+          component: worker-metrics
+
+  # Optional future targets:
+  # - kube-state-metrics
+  # - cadvisor
+  # - redis exporter

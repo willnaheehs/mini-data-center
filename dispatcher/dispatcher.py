@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 import redis
+from prometheus_client import CollectorRegistry, Counter, Gauge, push_to_gateway
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
@@ -22,9 +23,71 @@ WORKER_QUEUES = [
     },
 ]
 
+PUSHGATEWAY_URL = os.getenv("PUSHGATEWAY_URL", "pushgateway:9091")
+PROMETHEUS_JOB_NAME = os.getenv("PROMETHEUS_JOB_NAME", "mini-dc-dispatcher")
+PROMETHEUS_PUSH_ENABLED = os.getenv("PROMETHEUS_PUSH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 _round_robin_index = 0
 _tie_break_index = 0
+
+registry = CollectorRegistry()
+
+dispatch_jobs_submitted_total = Counter(
+    "mini_dc_dispatch_jobs_submitted_total",
+    "Total number of jobs submitted by the dispatcher",
+    ["policy", "job_type", "target_worker", "target_queue"],
+    registry=registry,
+)
+
+dispatch_failures_total = Counter(
+    "mini_dc_dispatch_failures_total",
+    "Total number of dispatcher submission failures",
+    ["policy", "reason"],
+    registry=registry,
+)
+
+dispatch_queue_length = Gauge(
+    "mini_dc_dispatch_queue_length",
+    "Observed queue length per worker queue at dispatch time",
+    ["worker", "queue"],
+    registry=registry,
+)
+
+dispatch_worker_busy = Gauge(
+    "mini_dc_dispatch_worker_busy",
+    "Observed worker busy flag at dispatch time",
+    ["worker", "busy_key"],
+    registry=registry,
+)
+
+dispatch_estimated_load = Gauge(
+    "mini_dc_dispatch_estimated_load",
+    "Observed estimated load per worker at dispatch time",
+    ["worker"],
+    registry=registry,
+)
+
+dispatch_policy_decisions_total = Counter(
+    "mini_dc_dispatch_policy_decisions_total",
+    "Total routing decisions made by dispatcher policy",
+    ["policy", "selected_worker", "tie_break_used"],
+    registry=registry,
+)
+
+dispatch_sleep_duration_seconds = Gauge(
+    "mini_dc_dispatch_sleep_duration_seconds",
+    "Latest submitted sleep job duration in seconds",
+    ["policy", "target_worker"],
+    registry=registry,
+)
+
+dispatch_cpu_work_units = Gauge(
+    "mini_dc_dispatch_cpu_work_units",
+    "Latest submitted CPU job work units",
+    ["policy", "target_worker"],
+    registry=registry,
+)
 
 
 def utc_now():
@@ -45,13 +108,62 @@ def get_busy_value(busy_key: str) -> int:
         return 0
 
 
+def observe_worker_snapshot(worker_name: str, queue_name: str, busy_key: str, queue_length: int, busy_value: int):
+    estimated_load = queue_length + busy_value
+    dispatch_queue_length.labels(worker=worker_name, queue=queue_name).set(queue_length)
+    dispatch_worker_busy.labels(worker=worker_name, busy_key=busy_key).set(busy_value)
+    dispatch_estimated_load.labels(worker=worker_name).set(estimated_load)
+    return estimated_load
+
+
+def observe_job_size(job_type: str, params: dict, policy: str, target_worker: str):
+    if job_type == "sleep" and "duration_sec" in params:
+        dispatch_sleep_duration_seconds.labels(policy=policy, target_worker=target_worker).set(params["duration_sec"])
+    elif job_type == "cpu" and "work_units" in params:
+        dispatch_cpu_work_units.labels(policy=policy, target_worker=target_worker).set(params["work_units"])
+
+
+def push_metrics(grouping_key=None):
+    if not PROMETHEUS_PUSH_ENABLED:
+        return
+    try:
+        push_to_gateway(
+            PUSHGATEWAY_URL,
+            job=PROMETHEUS_JOB_NAME,
+            registry=registry,
+            grouping_key=grouping_key or {},
+        )
+    except Exception as exc:
+        print(f"warning: failed to push dispatcher metrics to Pushgateway: {exc}")
+
+
 def choose_round_robin_target():
     global _round_robin_index
     target = WORKER_QUEUES[_round_robin_index]
     _round_robin_index = (_round_robin_index + 1) % len(WORKER_QUEUES)
+
+    queue_length = get_queue_length(target["queue_name"])
+    busy_value = get_busy_value(target["busy_key"])
+    estimated_load = observe_worker_snapshot(
+        target["worker_name"],
+        target["queue_name"],
+        target["busy_key"],
+        queue_length,
+        busy_value,
+    )
+
     decision = {
         "policy": "round_robin",
         "selection_reason": "alternating worker assignment",
+        "tie_break_used": False,
+        "load_snapshot": {
+            target["worker_name"]: {
+                "queue_name": target["queue_name"],
+                "queue_length": queue_length,
+                "busy_value": busy_value,
+                "estimated_load": estimated_load,
+            }
+        },
     }
     return target, decision
 
@@ -63,7 +175,13 @@ def choose_state_aware_target():
     for worker in WORKER_QUEUES:
         queue_length = get_queue_length(worker["queue_name"])
         busy_value = get_busy_value(worker["busy_key"])
-        estimated_load = queue_length + busy_value
+        estimated_load = observe_worker_snapshot(
+            worker["worker_name"],
+            worker["queue_name"],
+            worker["busy_key"],
+            queue_length,
+            busy_value,
+        )
         load_snapshot.append(
             {
                 **worker,
@@ -98,12 +216,23 @@ def choose_state_aware_target():
             for item in load_snapshot
         },
     }
+    dispatch_policy_decisions_total.labels(
+        policy="state_aware",
+        selected_worker=selected["worker_name"],
+        tie_break_used=str(tie_break_used).lower(),
+    ).inc()
     return selected, decision
 
 
 def choose_target():
     if ROUTING_POLICY == "round_robin":
-        return choose_round_robin_target()
+        target, decision = choose_round_robin_target()
+        dispatch_policy_decisions_total.labels(
+            policy="round_robin",
+            selected_worker=target["worker_name"],
+            tie_break_used="false",
+        ).inc()
+        return target, decision
     if ROUTING_POLICY == "state_aware":
         return choose_state_aware_target()
 
@@ -113,44 +242,69 @@ def choose_target():
 
 
 def submit_job(job_type, params):
-    target, decision = choose_target()
+    policy_name = ROUTING_POLICY
+    try:
+        target, decision = choose_target()
+        policy_name = decision["policy"]
 
-    job = {
-        "job_id": str(uuid.uuid4()),
-        "job_type": job_type,
-        "submit_time": utc_now(),
-        "submitted_at": utc_now(),
-        "params": params,
-        "policy": decision["policy"],
-        "target_worker": target["worker_name"],
-        "target_queue": target["queue_name"],
-        "dispatch_time": utc_now(),
-        "dispatcher_decision": decision,
-    }
+        job = {
+            "job_id": str(uuid.uuid4()),
+            "job_type": job_type,
+            "submit_time": utc_now(),
+            "submitted_at": utc_now(),
+            "params": params,
+            "policy": decision["policy"],
+            "target_worker": target["worker_name"],
+            "target_queue": target["queue_name"],
+            "dispatch_time": utc_now(),
+            "dispatcher_decision": decision,
+        }
 
-    if "load_snapshot" in decision:
-        for worker_name, metrics in decision["load_snapshot"].items():
-            safe_name = worker_name.replace("-", "_")
-            job[f"dispatch_queue_length_{safe_name}"] = metrics["queue_length"]
-            job[f"dispatch_busy_{safe_name}"] = metrics["busy_value"]
-            job[f"dispatch_estimated_load_{safe_name}"] = metrics["estimated_load"]
+        if "load_snapshot" in decision:
+            for worker_name, metrics in decision["load_snapshot"].items():
+                safe_name = worker_name.replace("-", "_")
+                job[f"dispatch_queue_length_{safe_name}"] = metrics["queue_length"]
+                job[f"dispatch_busy_{safe_name}"] = metrics["busy_value"]
+                job[f"dispatch_estimated_load_{safe_name}"] = metrics["estimated_load"]
 
-    r.lpush(target["queue_name"], json.dumps(job))
-
-    if decision["policy"] == "state_aware":
-        snapshot_text = ", ".join(
-            f"{worker}={{queue:{metrics['queue_length']},busy:{metrics['busy_value']},load:{metrics['estimated_load']}}}"
-            for worker, metrics in decision["load_snapshot"].items()
+        r.lpush(target["queue_name"], json.dumps(job))
+        dispatch_jobs_submitted_total.labels(
+            policy=decision["policy"],
+            job_type=job_type,
+            target_worker=target["worker_name"],
+            target_queue=target["queue_name"],
+        ).inc()
+        observe_job_size(job_type, params, decision["policy"], target["worker_name"])
+        push_metrics(
+            {
+                "instance": REDIS_HOST,
+                "policy": decision["policy"],
+            }
         )
-        print(
-            f"submitted {job['job_id']} using state_aware [{snapshot_text}] -> {target['worker_name']} ({target['queue_name']})"
-        )
-    else:
-        print(
-            f"submitted {job['job_id']} using round_robin -> {target['worker_name']} ({target['queue_name']})"
-        )
 
-    return job
+        if decision["policy"] == "state_aware":
+            snapshot_text = ", ".join(
+                f"{worker}={{queue:{metrics['queue_length']},busy:{metrics['busy_value']},load:{metrics['estimated_load']}}}"
+                for worker, metrics in decision["load_snapshot"].items()
+            )
+            print(
+                f"submitted {job['job_id']} using state_aware [{snapshot_text}] -> {target['worker_name']} ({target['queue_name']})"
+            )
+        else:
+            print(
+                f"submitted {job['job_id']} using round_robin -> {target['worker_name']} ({target['queue_name']})"
+            )
+
+        return job
+    except Exception as exc:
+        dispatch_failures_total.labels(policy=policy_name, reason=type(exc).__name__).inc()
+        push_metrics(
+            {
+                "instance": REDIS_HOST,
+                "policy": policy_name,
+            }
+        )
+        raise
 
 
 def main():

@@ -1,0 +1,34 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://node1-control:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: system-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system-logs
+          __path__: /var/log/*.log
+
+  - job_name: mini-dc-results
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: mini-dc-results
+          __path__: /tmp/mini-dc-logs/*.csv
+
+  - job_name: container-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: container-logs
+          __path__: /var/lib/docker/containers/*/*-json.log

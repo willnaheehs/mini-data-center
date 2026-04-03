@@ -1,0 +1,104 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum by (policy, target_worker) (rate(mini_dc_dispatch_jobs_submitted_total[5m]))",
+          "legendFormat": "{{policy}} -> {{target_worker}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatch Rate by Policy and Target Worker",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "targets": [
+        {
+          "expr": "mini_dc_dispatch_queue_length",
+          "legendFormat": "{{worker}} {{queue}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Observed Queue Length at Dispatch",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "targets": [
+        {
+          "expr": "mini_dc_dispatch_worker_busy",
+          "legendFormat": "{{worker}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker Busy State Seen by Dispatcher",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "targets": [
+        {
+          "expr": "mini_dc_dispatch_estimated_load",
+          "legendFormat": "{{worker}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Estimated Load by Worker",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum by (reason) (increase(mini_dc_dispatch_failures_total[6h]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatcher Failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 6,
+      "targets": [
+        {
+          "expr": "{job=~\"container-logs|system-logs\"} |= \"submitted\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Dispatch Logs",
+      "type": "logs"
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["mini-data-center", "dispatcher", "queue"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Dispatcher and Queue",
+  "uid": "mini-dc-dispatcher-queue",
+  "version": 1
+}
