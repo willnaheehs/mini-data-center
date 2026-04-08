@@ -4,7 +4,7 @@
   "graphTooltip": 0,
   "panels": [
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "id": 1,
@@ -19,7 +19,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "id": 2,
@@ -39,7 +39,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
       "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 3,
@@ -59,7 +59,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {"type": "loki", "uid": "${DS_LOKI}"},
+      "datasource": {"type": "loki", "uid": "Loki"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "id": 4,
       "targets": [
@@ -80,7 +80,7 @@
     "list": [
       {
         "current": {"selected": true, "text": "node1-control:9100", "value": "node1-control:9100"},
-        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "datasource": {"type": "prometheus", "uid": "Prometheus"},
         "definition": "label_values(node_uname_info, instance)",
         "hide": 0,
         "includeAll": false,
