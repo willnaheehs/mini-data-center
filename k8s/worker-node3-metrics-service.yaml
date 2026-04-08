@@ -3,10 +3,12 @@ kind: Service
 metadata:
   name: worker-node3-metrics
 spec:
+  type: NodePort
   selector:
     app: worker-node3
   ports:
     - name: metrics
       port: 8002
       targetPort: 8002
+      nodePort: 30083
       protocol: TCP
