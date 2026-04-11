@@ -15,6 +15,7 @@ scrape_configs:
           - localhost
         labels:
           job: system-logs
+          host: HOSTNAME_PLACEHOLDER
           __path__: /var/log/*.log
 
   - job_name: mini-dc-results
@@ -23,12 +24,16 @@ scrape_configs:
           - localhost
         labels:
           job: mini-dc-results
+          host: HOSTNAME_PLACEHOLDER
           __path__: /tmp/mini-dc-logs/*.csv
 
   - job_name: container-logs
+    pipeline_stages:
+      - docker: {}
     static_configs:
       - targets:
           - localhost
         labels:
           job: container-logs
+          host: HOSTNAME_PLACEHOLDER
           __path__: /var/lib/docker/containers/*/*-json.log
