@@ -3,6 +3,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import redis
 from prometheus_client import CollectorRegistry, Counter, Gauge, push_to_gateway
@@ -26,6 +27,8 @@ WORKER_QUEUES = [
 PUSHGATEWAY_URL = os.getenv("PUSHGATEWAY_URL", "pushgateway:9091")
 PROMETHEUS_JOB_NAME = os.getenv("PROMETHEUS_JOB_NAME", "mini-dc-dispatcher")
 PROMETHEUS_PUSH_ENABLED = os.getenv("PROMETHEUS_PUSH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+JOB_FILE_PATH = os.getenv("JOB_FILE_PATH", "").strip()
+DEFAULT_SUBMIT_INTERVAL_MS = int(os.getenv("SUBMIT_INTERVAL_MS", "500"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 _round_robin_index = 0
@@ -241,6 +244,93 @@ def choose_target():
     )
 
 
+def normalize_job_entry(job: dict) -> dict:
+    if not isinstance(job, dict):
+        raise ValueError("each job entry must be an object")
+
+    job_type = job.get("type") or job.get("job_type")
+    if not job_type:
+        raise ValueError("job entry is missing 'type'")
+
+    normalized = {
+        "job_type": str(job_type).strip().lower(),
+        "params": {},
+    }
+
+    if normalized["job_type"] == "sleep":
+        if "duration_sec" in job:
+            duration = job["duration_sec"]
+        else:
+            duration = job.get("duration")
+        if duration is None:
+            raise ValueError("sleep job requires 'duration' or 'duration_sec'")
+        normalized["params"]["duration_sec"] = duration
+    elif normalized["job_type"] == "cpu":
+        work_units = job.get("work_units")
+        if work_units is None:
+            raise ValueError("cpu job requires 'work_units'")
+        normalized["params"]["work_units"] = work_units
+    else:
+        raise ValueError(f"unsupported job type '{normalized['job_type']}'")
+
+    if "params" in job and isinstance(job["params"], dict):
+        normalized["params"].update(job["params"])
+
+    return normalized
+
+
+def load_jobs_from_file(job_file_path: str):
+    file_path = Path(job_file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"job file not found: {file_path}")
+
+    payload = json.loads(file_path.read_text())
+
+    if isinstance(payload, list):
+        jobs = payload
+        routing_policy = ROUTING_POLICY
+        submit_interval_ms = DEFAULT_SUBMIT_INTERVAL_MS
+    elif isinstance(payload, dict):
+        jobs = payload.get("jobs", [])
+        routing_policy = str(payload.get("routing_policy", ROUTING_POLICY)).strip().lower()
+        submit_interval_ms = int(payload.get("submit_interval_ms", DEFAULT_SUBMIT_INTERVAL_MS))
+    else:
+        raise ValueError("job file must contain either a list of jobs or an object with a 'jobs' array")
+
+    if not jobs:
+        raise ValueError("job file does not contain any jobs")
+
+    normalized_jobs = [normalize_job_entry(job) for job in jobs]
+    return {
+        "routing_policy": routing_policy,
+        "submit_interval_ms": submit_interval_ms,
+        "jobs": normalized_jobs,
+        "source": str(file_path),
+    }
+
+
+def demo_jobs():
+    return {
+        "routing_policy": ROUTING_POLICY,
+        "submit_interval_ms": DEFAULT_SUBMIT_INTERVAL_MS,
+        "source": "built-in demo",
+        "jobs": [
+            {
+                "job_type": "sleep",
+                "params": {"duration_sec": 2},
+            },
+            {
+                "job_type": "cpu",
+                "params": {"work_units": 5000},
+            },
+            {
+                "job_type": "cpu",
+                "params": {"work_units": 20000},
+            },
+        ],
+    }
+
+
 def submit_job(job_type, params):
     policy_name = ROUTING_POLICY
     try:
@@ -308,33 +398,28 @@ def submit_job(job_type, params):
 
 
 def main():
+    global ROUTING_POLICY
+
+    workload = load_jobs_from_file(JOB_FILE_PATH) if JOB_FILE_PATH else demo_jobs()
+    ROUTING_POLICY = workload["routing_policy"]
+    submit_interval_ms = workload["submit_interval_ms"]
+
     print(f"Dispatcher starting with ROUTING_POLICY={ROUTING_POLICY}")
     print(
         "Available worker queues: "
         + ", ".join(f"{item['worker_name']}={item['queue_name']}" for item in WORKER_QUEUES)
     )
+    print(f"Job source: {workload['source']}")
+    print(f"Jobs to submit: {len(workload['jobs'])}")
+    print(f"Submit interval: {submit_interval_ms} ms")
 
-    jobs = [
-        {
-            "job_type": "sleep",
-            "params": {"duration_sec": 2},
-        },
-        {
-            "job_type": "cpu",
-            "params": {"work_units": 5000},
-        },
-        {
-            "job_type": "cpu",
-            "params": {"work_units": 20000},
-        },
-    ]
-
-    for job in jobs:
+    for job in workload["jobs"]:
         submit_job(
             job_type=job["job_type"],
             params=job["params"],
         )
-        time.sleep(0.5)
+        if submit_interval_ms > 0:
+            time.sleep(submit_interval_ms / 1000.0)
 
 
 if __name__ == "__main__":
