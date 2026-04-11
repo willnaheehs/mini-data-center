@@ -1,14 +1,16 @@
 {
   "routing_policy": "round_robin",
-  "submit_interval_ms": 1000,
+  "submit_interval_ms": 2000,
   "jobs": [
-    { "type": "sleep", "duration": 1 },
-    { "type": "cpu", "work_units": 5000 },
     { "type": "sleep", "duration": 2 },
-    { "type": "cpu", "work_units": 8000 },
-    { "type": "sleep", "duration": 1 },
-    { "type": "cpu", "work_units": 12000 },
+    { "type": "cpu", "work_units": 60000 },
+    { "type": "sleep", "duration": 3 },
+    { "type": "cpu", "work_units": 90000 },
     { "type": "sleep", "duration": 2 },
-    { "type": "cpu", "work_units": 6000 }
+    { "type": "cpu", "work_units": 120000 },
+    { "type": "sleep", "duration": 3 },
+    { "type": "cpu", "work_units": 80000 },
+    { "type": "sleep", "duration": 2 },
+    { "type": "cpu", "work_units": 100000 }
   ]
 }

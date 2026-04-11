@@ -6,14 +6,16 @@ data:
   jobs-mixed.json: |
     {
       "routing_policy": "round_robin",
-      "submit_interval_ms": 250,
+      "submit_interval_ms": 500,
       "jobs": [
-        { "type": "sleep", "duration": 2 },
-        { "type": "cpu", "work_units": 5000 },
-        { "type": "cpu", "work_units": 20000 },
-        { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 12000 },
-        { "type": "sleep", "duration": 3 }
+        { "type": "sleep", "duration": 4 },
+        { "type": "cpu", "work_units": 75000 },
+        { "type": "cpu", "work_units": 200000 },
+        { "type": "sleep", "duration": 3 },
+        { "type": "cpu", "work_units": 125000 },
+        { "type": "sleep", "duration": 5 },
+        { "type": "cpu", "work_units": 250000 },
+        { "type": "sleep", "duration": 2 }
       ]
     }
   jobs-burst.json: |
@@ -21,47 +23,59 @@ data:
       "routing_policy": "round_robin",
       "submit_interval_ms": 0,
       "jobs": [
-        { "type": "cpu", "work_units": 5000 },
-        { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 12000 },
-        { "type": "cpu", "work_units": 20000 },
+        { "type": "cpu", "work_units": 80000 },
         { "type": "sleep", "duration": 2 },
-        { "type": "cpu", "work_units": 8000 },
-        { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 15000 },
-        { "type": "cpu", "work_units": 22000 },
+        { "type": "cpu", "work_units": 150000 },
+        { "type": "cpu", "work_units": 220000 },
+        { "type": "sleep", "duration": 3 },
+        { "type": "cpu", "work_units": 100000 },
         { "type": "sleep", "duration": 2 },
-        { "type": "cpu", "work_units": 9000 },
-        { "type": "cpu", "work_units": 18000 }
+        { "type": "cpu", "work_units": 180000 },
+        { "type": "cpu", "work_units": 260000 },
+        { "type": "sleep", "duration": 4 },
+        { "type": "cpu", "work_units": 120000 },
+        { "type": "cpu", "work_units": 200000 },
+        { "type": "sleep", "duration": 3 },
+        { "type": "cpu", "work_units": 140000 },
+        { "type": "cpu", "work_units": 240000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 160000 },
+        { "type": "cpu", "work_units": 280000 },
+        { "type": "sleep", "duration": 5 },
+        { "type": "cpu", "work_units": 300000 }
       ]
     }
   jobs-heavy-cpu.json: |
     {
       "routing_policy": "round_robin",
-      "submit_interval_ms": 100,
+      "submit_interval_ms": 250,
       "jobs": [
-        { "type": "cpu", "work_units": 20000 },
-        { "type": "cpu", "work_units": 50000 },
-        { "type": "cpu", "work_units": 100000 },
-        { "type": "cpu", "work_units": 75000 },
-        { "type": "cpu", "work_units": 50000 },
-        { "type": "cpu", "work_units": 120000 },
-        { "type": "cpu", "work_units": 25000 },
-        { "type": "cpu", "work_units": 90000 }
+        { "type": "cpu", "work_units": 250000 },
+        { "type": "cpu", "work_units": 500000 },
+        { "type": "cpu", "work_units": 1000000 },
+        { "type": "cpu", "work_units": 750000 },
+        { "type": "cpu", "work_units": 500000 },
+        { "type": "cpu", "work_units": 1200000 },
+        { "type": "cpu", "work_units": 250000 },
+        { "type": "cpu", "work_units": 900000 },
+        { "type": "cpu", "work_units": 600000 },
+        { "type": "cpu", "work_units": 1100000 }
       ]
     }
   jobs-steady.json: |
     {
       "routing_policy": "round_robin",
-      "submit_interval_ms": 1000,
+      "submit_interval_ms": 2000,
       "jobs": [
-        { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 5000 },
         { "type": "sleep", "duration": 2 },
-        { "type": "cpu", "work_units": 8000 },
-        { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 12000 },
+        { "type": "cpu", "work_units": 60000 },
+        { "type": "sleep", "duration": 3 },
+        { "type": "cpu", "work_units": 90000 },
         { "type": "sleep", "duration": 2 },
-        { "type": "cpu", "work_units": 6000 }
+        { "type": "cpu", "work_units": 120000 },
+        { "type": "sleep", "duration": 3 },
+        { "type": "cpu", "work_units": 80000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 100000 }
       ]
     }
