@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: dispatcher-jobs
 data:
-  jobs.json: |
+  jobs-mixed.json: |
     {
       "routing_policy": "round_robin",
       "submit_interval_ms": 250,
@@ -12,6 +12,56 @@ data:
         { "type": "cpu", "work_units": 5000 },
         { "type": "cpu", "work_units": 20000 },
         { "type": "sleep", "duration": 1 },
-        { "type": "cpu", "work_units": 12000 }
+        { "type": "cpu", "work_units": 12000 },
+        { "type": "sleep", "duration": 3 }
+      ]
+    }
+  jobs-burst.json: |
+    {
+      "routing_policy": "round_robin",
+      "submit_interval_ms": 0,
+      "jobs": [
+        { "type": "cpu", "work_units": 5000 },
+        { "type": "sleep", "duration": 1 },
+        { "type": "cpu", "work_units": 12000 },
+        { "type": "cpu", "work_units": 20000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 8000 },
+        { "type": "sleep", "duration": 1 },
+        { "type": "cpu", "work_units": 15000 },
+        { "type": "cpu", "work_units": 22000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 9000 },
+        { "type": "cpu", "work_units": 18000 }
+      ]
+    }
+  jobs-heavy-cpu.json: |
+    {
+      "routing_policy": "round_robin",
+      "submit_interval_ms": 100,
+      "jobs": [
+        { "type": "cpu", "work_units": 20000 },
+        { "type": "cpu", "work_units": 50000 },
+        { "type": "cpu", "work_units": 100000 },
+        { "type": "cpu", "work_units": 75000 },
+        { "type": "cpu", "work_units": 50000 },
+        { "type": "cpu", "work_units": 120000 },
+        { "type": "cpu", "work_units": 25000 },
+        { "type": "cpu", "work_units": 90000 }
+      ]
+    }
+  jobs-steady.json: |
+    {
+      "routing_policy": "round_robin",
+      "submit_interval_ms": 1000,
+      "jobs": [
+        { "type": "sleep", "duration": 1 },
+        { "type": "cpu", "work_units": 5000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 8000 },
+        { "type": "sleep", "duration": 1 },
+        { "type": "cpu", "work_units": 12000 },
+        { "type": "sleep", "duration": 2 },
+        { "type": "cpu", "work_units": 6000 }
       ]
     }

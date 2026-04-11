@@ -27,7 +27,7 @@ spec:
             - name: BUSY_KEY_NODE3
               value: "busy-node3"
             - name: JOB_FILE_PATH
-              value: "/etc/dispatcher/jobs.json"
+              value: "/etc/dispatcher/jobs-mixed.json"
           volumeMounts:
             - name: dispatcher-jobs
               mountPath: /etc/dispatcher

@@ -1,0 +1,14 @@
+{
+  "routing_policy": "round_robin",
+  "submit_interval_ms": 100,
+  "jobs": [
+    { "type": "cpu", "work_units": 20000 },
+    { "type": "cpu", "work_units": 50000 },
+    { "type": "cpu", "work_units": 100000 },
+    { "type": "cpu", "work_units": 75000 },
+    { "type": "cpu", "work_units": 50000 },
+    { "type": "cpu", "work_units": 120000 },
+    { "type": "cpu", "work_units": 25000 },
+    { "type": "cpu", "work_units": 90000 }
+  ]
+}
