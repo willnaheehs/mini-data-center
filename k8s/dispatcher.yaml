@@ -26,3 +26,13 @@ spec:
               value: "busy-node2"
             - name: BUSY_KEY_NODE3
               value: "busy-node3"
+            - name: JOB_FILE_PATH
+              value: "/etc/dispatcher/jobs.json"
+          volumeMounts:
+            - name: dispatcher-jobs
+              mountPath: /etc/dispatcher
+              readOnly: true
+      volumes:
+        - name: dispatcher-jobs
+          configMap:
+            name: dispatcher-jobs
