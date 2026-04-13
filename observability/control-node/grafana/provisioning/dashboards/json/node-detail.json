@@ -96,16 +96,20 @@
         "type": "query"
       },
       {
-        "current": {"selected": true, "text": ".*", "value": ".*"},
+        "current": {"selected": true, "text": "node1-control", "value": "node1-control"},
+        "datasource": {"type": "loki", "uid": "Loki"},
+        "definition": "label_values({job=~\".+\"}, host)",
         "hide": 0,
         "includeAll": false,
         "label": "Host Label",
         "multi": false,
         "name": "host",
         "options": [],
-        "query": ".*",
+        "query": {"label": "host", "refId": "LokiVariableQueryEditor-Host", "stream": "{job=~\".+\"}", "type": 1},
+        "refresh": 1,
         "skipUrlSync": false,
-        "type": "textbox"
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
