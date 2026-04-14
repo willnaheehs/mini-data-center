@@ -48,18 +48,20 @@ data:
   jobs-heavy-cpu.json: |
     {
       "routing_policy": "round_robin",
-      "submit_interval_ms": 250,
+      "submit_interval_ms": 150,
       "jobs": [
-        { "type": "cpu", "work_units": 250000 },
-        { "type": "cpu", "work_units": 500000 },
-        { "type": "cpu", "work_units": 1000000 },
-        { "type": "cpu", "work_units": 750000 },
-        { "type": "cpu", "work_units": 500000 },
-        { "type": "cpu", "work_units": 1200000 },
-        { "type": "cpu", "work_units": 250000 },
-        { "type": "cpu", "work_units": 900000 },
         { "type": "cpu", "work_units": 600000 },
-        { "type": "cpu", "work_units": 1100000 }
+        { "type": "cpu", "work_units": 1100000 },
+        { "type": "cpu", "work_units": 1800000 },
+        { "type": "cpu", "work_units": 1400000 },
+        { "type": "cpu", "work_units": 900000 },
+        { "type": "cpu", "work_units": 2200000 },
+        { "type": "cpu", "work_units": 750000 },
+        { "type": "cpu", "work_units": 1600000 },
+        { "type": "cpu", "work_units": 1200000 },
+        { "type": "cpu", "work_units": 2000000 },
+        { "type": "cpu", "work_units": 850000 },
+        { "type": "cpu", "work_units": 1700000 }
       ]
     }
   jobs-steady.json: |
