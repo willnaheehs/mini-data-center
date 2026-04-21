@@ -7,6 +7,7 @@ from typing import Any, Dict, Literal, Optional
 
 import redis
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -247,6 +248,11 @@ def store_initial_job_state(job: dict) -> None:
     redis_set_json(status_key(job_id), status_doc)
     redis_set_json(payload_key(job_id), job)
     r.zadd(JOB_INDEX_KEY, {job_id: time.time()})
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
 
 
 @app.get("/healthz")
