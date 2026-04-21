@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-dc-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mini-dc-api
+  template:
+    metadata:
+      labels:
+        app: mini-dc-api
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: node1-control
+      containers:
+        - name: api
+          image: williamsdock/mini-dc-api:v1
+          env:
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT_NUM
+              value: "6379"
+            - name: ROUTING_POLICY
+              value: "shortest_queue"
+            - name: QUEUE_NODE2
+              value: "jobs-node2"
+            - name: BUSY_KEY_NODE2
+              value: "busy-node2"
+            - name: QUEUE_NODE3
+              value: "jobs-node3"
+            - name: BUSY_KEY_NODE3
+              value: "busy-node3"
+            - name: JOB_STATUS_PREFIX
+              value: "job-status:"
+            - name: JOB_RESULT_PREFIX
+              value: "job-result:"
+            - name: JOB_PAYLOAD_PREFIX
+              value: "job-payload:"
+            - name: JOB_INDEX_KEY
+              value: "jobs-api:index"
+            - name: JOB_TTL_SEC
+              value: "604800"
+            - name: UPLOAD_DIR
+              value: "/data/uploads"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: api-data
+              mountPath: /data
+      volumes:
+        - name: api-data
+          hostPath:
+            path: /tmp/mini-dc-api
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-dc-api
+spec:
+  type: NodePort
+  selector:
+    app: mini-dc-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30080

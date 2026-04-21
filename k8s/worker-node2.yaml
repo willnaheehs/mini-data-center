@@ -16,7 +16,7 @@ spec:
         kubernetes.io/hostname: node2-worker
       containers:
         - name: worker
-          image: williamsdock/mini-dc-worker:v9
+          image: williamsdock/mini-dc-worker:v10
           env:
             - name: REDIS_HOST
               value: "redis"

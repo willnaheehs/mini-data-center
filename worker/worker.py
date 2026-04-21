@@ -3,6 +3,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import redis
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
@@ -16,6 +17,9 @@ RESULTS_PATH = os.getenv("RESULTS_PATH", "/data/job_results.csv")
 BUSY_KEY = os.getenv("BUSY_KEY", f"busy-{WORKER_NAME}")
 BUSY_KEY_TTL_SEC = int(os.getenv("BUSY_KEY_TTL_SEC", "300"))
 METRICS_PORT = int(os.getenv("METRICS_PORT", "8002"))
+JOB_STATUS_PREFIX = os.getenv("JOB_STATUS_PREFIX", "job-status:")
+JOB_RESULT_PREFIX = os.getenv("JOB_RESULT_PREFIX", "job-result:")
+JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", str(7 * 24 * 60 * 60)))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -122,6 +126,18 @@ def append_result_row(row: dict):
     with open(RESULTS_PATH, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writerow(row)
+
+
+def redis_get_json(key: str):
+    raw = r.get(key)
+    if raw is None:
+        return None
+    return json.loads(raw)
+
+
+def redis_set_json(key: str, payload: dict):
+    r.set(key, json.dumps(payload))
+    r.expire(key, JOB_TTL_SEC)
 
 
 def set_worker_busy(is_busy: bool):
@@ -246,11 +262,54 @@ def build_result_row(job: dict, started_at: datetime, finished_at: datetime, sta
     }
 
 
+def build_result_payload(job: dict, row: dict, extra_result: dict | None = None):
+    payload = {
+        "job_id": row["job_id"],
+        "job_type": job.get("api_job_type", job.get("job_type", "unknown")),
+        "worker_job_type": job.get("job_type", "unknown"),
+        "status": row["status"],
+        "submitted_at": row["submit_time"],
+        "started_at": row["start_time"],
+        "finished_at": row["finish_time"],
+        "worker_name": WORKER_NAME,
+        "target_worker": job.get("target_worker") or None,
+        "result_summary": row["result_summary"],
+        "result": extra_result or {},
+        "metrics": {
+            "wait_time": row["wait_time"],
+            "service_time": row["service_time"],
+            "total_time": row["total_time"],
+        },
+        "metadata": job.get("metadata", {}),
+    }
+    return payload
+
+
+def persist_job_status(job: dict, row: dict, extra_result: dict | None = None, error: str | None = None):
+    job_id = row["job_id"]
+    result_payload = build_result_payload(job, row, extra_result=extra_result)
+    status_payload = {
+        "job_id": job_id,
+        "status": row["status"],
+        "job_type": job.get("api_job_type", job.get("job_type", "unknown")),
+        "submitted_at": row["submit_time"],
+        "started_at": row["start_time"],
+        "finished_at": row["finish_time"],
+        "worker_name": WORKER_NAME,
+        "target_worker": job.get("target_worker") or None,
+        "error": error,
+        "result": result_payload["result"] if row["status"] == "completed" else None,
+    }
+    redis_set_json(f"{JOB_STATUS_PREFIX}{job_id}", status_payload)
+    redis_set_json(f"{JOB_RESULT_PREFIX}{job_id}", result_payload)
+
+
 def write_failed_result(job, started_at: datetime, error_msg: str):
     finished_at = datetime.now(timezone.utc)
     row = build_result_row(job, started_at, finished_at, "failed", error_msg)
     append_result_row(row)
     observe_result_metrics(job, row)
+    persist_job_status(job, row, error=error_msg)
 
 
 def validate_job(job: dict):
@@ -285,6 +344,25 @@ def validate_job(job: dict):
         if work_units <= 0:
             raise ValueError("params.work_units must be positive")
 
+    elif job["job_type"] == "file":
+        operation = job["params"].get("operation")
+        if operation not in {"word_count", "line_count", "byte_count"}:
+            raise ValueError("file jobs require supported operation: word_count, line_count, or byte_count")
+        file_path = job["params"].get("file_path")
+        if not file_path or not isinstance(file_path, str):
+            raise ValueError("file jobs require params.file_path")
+
+    elif job["job_type"] == "ml":
+        operation = job["params"].get("operation")
+        if operation != "threshold_classify":
+            raise ValueError("ml jobs currently support only threshold_classify")
+        values = job["params"].get("values")
+        if not isinstance(values, list) or not values:
+            raise ValueError("ml jobs require a non-empty params.values list")
+        threshold = job["params"].get("threshold")
+        if not isinstance(threshold, (int, float)):
+            raise ValueError("ml jobs require numeric params.threshold")
+
     else:
         raise ValueError(f"unsupported job_type: {job['job_type']}")
 
@@ -311,6 +389,14 @@ def process_sleep_job(job: dict):
     )
     append_result_row(row)
     observe_result_metrics(job, row)
+    persist_job_status(
+        job,
+        row,
+        extra_result={
+            "duration_sec": duration,
+            "message": f"slept for {duration} seconds",
+        },
+    )
 
     print(f"Worker {WORKER_NAME} finished sleep job {job['job_id']} in {row['service_time']:.2f} sec")
 
@@ -355,8 +441,108 @@ def process_cpu_job(job: dict):
     )
     append_result_row(row)
     observe_result_metrics(job, row)
+    persist_job_status(
+        job,
+        row,
+        extra_result={
+            "work_units": work_units,
+            "prime_count": prime_count,
+            "message": f"counted {prime_count} primes up to {work_units}",
+        },
+    )
 
     print(f"Worker {WORKER_NAME} finished cpu job {job['job_id']} in {row['service_time']:.2f} sec")
+
+
+def process_file_job(job: dict):
+    params = job["params"]
+    operation = params["operation"]
+    file_path = Path(params["file_path"])
+    started_at = datetime.now(timezone.utc)
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"input file not found: {file_path}")
+
+    print(
+        f"Worker {WORKER_NAME} received file job {job['job_id']} from queue {QUEUE_NAME} "
+        f"targeted for {job.get('target_worker', 'unknown')}"
+    )
+    print(f"Worker {WORKER_NAME} starting file job {job['job_id']} with operation={operation} path={file_path}")
+
+    content = file_path.read_bytes()
+    if operation == "byte_count":
+        result_value = len(content)
+    else:
+        text = content.decode("utf-8")
+        if operation == "line_count":
+            result_value = len(text.splitlines())
+        elif operation == "word_count":
+            result_value = len(text.split())
+        else:
+            raise ValueError(f"unsupported file operation: {operation}")
+
+    finished_at = datetime.now(timezone.utc)
+    row = build_result_row(
+        job,
+        started_at,
+        finished_at,
+        "completed",
+        f"{operation}={result_value} for {file_path.name}",
+    )
+    append_result_row(row)
+    observe_result_metrics(job, row)
+    persist_job_status(
+        job,
+        row,
+        extra_result={
+            "operation": operation,
+            "file_name": params.get("file_name", file_path.name),
+            "file_path": str(file_path),
+            "value": result_value,
+        },
+    )
+
+    print(f"Worker {WORKER_NAME} finished file job {job['job_id']} in {row['service_time']:.2f} sec")
+
+
+def process_ml_job(job: dict):
+    params = job["params"]
+    values = params["values"]
+    threshold = params["threshold"]
+    started_at = datetime.now(timezone.utc)
+
+    print(
+        f"Worker {WORKER_NAME} received ml job {job['job_id']} from queue {QUEUE_NAME} "
+        f"targeted for {job.get('target_worker', 'unknown')}"
+    )
+    print(f"Worker {WORKER_NAME} starting ml job {job['job_id']} with threshold={threshold}")
+
+    predictions = [1 if value >= threshold else 0 for value in values]
+    positive_count = sum(predictions)
+
+    finished_at = datetime.now(timezone.utc)
+    row = build_result_row(
+        job,
+        started_at,
+        finished_at,
+        "completed",
+        f"classified {len(values)} samples with {positive_count} positives",
+    )
+    append_result_row(row)
+    observe_result_metrics(job, row)
+    persist_job_status(
+        job,
+        row,
+        extra_result={
+            "operation": params.get("operation", "threshold_classify"),
+            "threshold": threshold,
+            "sample_count": len(values),
+            "positive_count": positive_count,
+            "predictions": predictions,
+        },
+    )
+
+    print(f"Worker {WORKER_NAME} finished ml job {job['job_id']} in {row['service_time']:.2f} sec")
 
 
 def main():
@@ -377,10 +563,22 @@ def main():
             observe_job_size(job)
             observe_mismatch(job)
 
+            status_doc = redis_get_json(f"{JOB_STATUS_PREFIX}{job['job_id']}") if job.get("job_id") else None
+            if status_doc is not None:
+                status_doc["status"] = "running"
+                status_doc["started_at"] = started_at.isoformat()
+                status_doc["worker_name"] = WORKER_NAME
+                status_doc["target_worker"] = job.get("target_worker") or None
+                redis_set_json(f"{JOB_STATUS_PREFIX}{job['job_id']}", status_doc)
+
             if job["job_type"] == "sleep":
                 process_sleep_job(job)
             elif job["job_type"] == "cpu":
                 process_cpu_job(job)
+            elif job["job_type"] == "file":
+                process_file_job(job)
+            elif job["job_type"] == "ml":
+                process_ml_job(job)
 
         except Exception as e:
             error_msg = str(e)
