@@ -308,6 +308,7 @@
           <div class="small">${job.job_id}</div>
           <div class="small">${summarizeJob(job)}</div>
           <div class="small">Target: ${job.target_worker || 'pending'} • Policy: ${job.policy || 'unknown'}</div>
+          ${job.deletable ? '<button class="ghost delete-job-btn" data-job-id="' + job.job_id + '" style="margin-top:10px;">Delete queued job</button>' : ''}
         `;
         el.addEventListener('click', async () => {
           currentJobId = job.job_id;
@@ -315,6 +316,13 @@
           renderTrackedJobs();
           await loadJob(job.job_id);
         });
+        const deleteButton = el.querySelector('.delete-job-btn');
+        if (deleteButton) {
+          deleteButton.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await deleteQueuedJob(job.job_id);
+          });
+        }
         jobsList.appendChild(el);
       });
     }
@@ -525,6 +533,31 @@
       resultOutput.textContent = pretty(data);
       renderArtifacts(data);
       return data;
+    }
+
+    async function deleteQueuedJob(jobId) {
+      const confirmed = window.confirm(`Delete queued job ${jobId}? This will not stop running jobs.`);
+      if (!confirmed) return;
+      try {
+        const res = await fetch(`/jobs/${jobId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(pretty(data));
+        if (currentJobId === jobId) {
+          currentJobId = '';
+          jobIdInput.value = '';
+          jobSummary.textContent = 'Select a job to inspect it.';
+          jobOverview.innerHTML = '';
+          resultSummary.innerHTML = '';
+          lifecycle.innerHTML = '';
+          statusOutput.textContent = 'Waiting for status...';
+          resultOutput.textContent = 'Waiting for result...';
+          artifactLinks.innerHTML = '';
+        }
+        await fetchClusterStatus();
+        showBanner(`Deleted queued job ${jobId}.`, 'ok');
+      } catch (err) {
+        alert(String(err));
+      }
     }
 
     async function loadJob(jobId) {

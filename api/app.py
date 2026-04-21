@@ -356,6 +356,8 @@ def get_recent_jobs(limit: int = RECENT_JOBS_LIMIT) -> list[dict]:
                 "worker_name": status_doc.get("worker_name"),
                 "target_worker": status_doc.get("target_worker"),
                 "policy": (payload_doc or {}).get("policy"),
+                "target_queue": (payload_doc or {}).get("target_queue"),
+                "deletable": status_doc.get("status") == "dispatched",
                 "result_summary": (redis_get_json(result_key(job_id)) or {}).get("result_summary"),
             }
         )
@@ -496,6 +498,54 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     if status_doc is None:
         raise HTTPException(status_code=404, detail="job not found")
     return JobStatusResponse(**status_doc)
+
+
+@app.delete("/jobs/{job_id}")
+def delete_queued_job(job_id: str) -> dict:
+    status_doc = redis_get_json(status_key(job_id))
+    payload_doc = redis_get_json(payload_key(job_id))
+    if status_doc is None or payload_doc is None:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    if status_doc.get("status") != "dispatched":
+        raise HTTPException(status_code=409, detail=f"only queued jobs can be deleted, job is {status_doc.get('status', 'unknown')}")
+
+    target_queue = payload_doc.get("target_queue")
+    if not target_queue:
+        raise HTTPException(status_code=500, detail="job target queue missing")
+
+    removed = r.lrem(target_queue, 1, json.dumps(payload_doc))
+    if removed == 0:
+        raise HTTPException(status_code=409, detail="job is no longer queued")
+
+    status_doc["status"] = "deleted"
+    status_doc["finished_at"] = utc_now()
+    status_doc["error"] = "deleted from queue by user"
+    redis_set_json(status_key(job_id), status_doc)
+
+    result_payload = {
+        "job_id": job_id,
+        "job_type": status_doc.get("job_type"),
+        "worker_job_type": payload_doc.get("job_type"),
+        "status": "deleted",
+        "submitted_at": status_doc.get("submitted_at"),
+        "dispatched_at": status_doc.get("dispatched_at"),
+        "started_at": None,
+        "finished_at": status_doc.get("finished_at"),
+        "worker_name": None,
+        "target_worker": status_doc.get("target_worker"),
+        "result_summary": "deleted from queue by user",
+        "result": {},
+        "metrics": {},
+        "metadata": payload_doc.get("metadata", {}),
+        "artifacts": payload_doc.get("artifacts", {}),
+    }
+    redis_set_json(result_key(job_id), result_payload)
+    return {
+        "job_id": job_id,
+        "status": "deleted",
+        "removed_from_queue": target_queue,
+    }
 
 
 @app.get("/jobs/{job_id}/result")
