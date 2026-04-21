@@ -49,6 +49,7 @@
     .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
     .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
     .metric .value { font-size: 1.45rem; font-weight: 800; margin-bottom: 6px; }
+    .metric .label { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #c7d2fe; }
     .workers-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
@@ -251,16 +252,46 @@
       setTimeout(() => actionBanner.classList.remove('show'), 2600);
     }
 
+    function formatDateTime(value) {
+      if (!value) return 'n/a';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      }).format(date);
+    }
+
+    function formatRelativeTime(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+      const abs = Math.abs(diffSeconds);
+      const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+      if (abs < 60) return rtf.format(Math.round(diffSeconds), 'second');
+      if (abs < 3600) return rtf.format(Math.round(diffSeconds / 60), 'minute');
+      if (abs < 86400) return rtf.format(Math.round(diffSeconds / 3600), 'hour');
+      return rtf.format(Math.round(diffSeconds / 86400), 'day');
+    }
+
+    function formatWhen(value) {
+      if (!value) return 'n/a';
+      return `${formatDateTime(value)} (${formatRelativeTime(value)})`;
+    }
+
     function renderClusterMetrics(cluster) {
       const workers = cluster?.workers || [];
       const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
       const busyCount = workers.filter(worker => worker.busy).length;
       const activeJobs = (cluster?.recent_jobs || []).filter(job => ['running', 'dispatched'].includes(job.status)).length;
       clusterMetrics.innerHTML = `
-        <div class="metric"><div class="value">${cluster.routing_policy}</div><div class="small">Active routing policy</div></div>
-        <div class="metric"><div class="value">${totalQueued}</div><div class="small">Total queued jobs</div></div>
-        <div class="metric"><div class="value">${busyCount}/${workers.length}</div><div class="small">Workers busy</div></div>
-        <div class="metric"><div class="value">${activeJobs}</div><div class="small">Active jobs</div></div>
+        <div class="metric"><div class="label">Policy</div><div class="value">${cluster.routing_policy}</div><div class="small">Current routing strategy</div></div>
+        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div><div class="small">Jobs waiting in Redis queues</div></div>
+        <div class="metric"><div class="label">Workers busy</div><div class="value">${busyCount}/${workers.length}</div><div class="small">Workers actively executing</div></div>
+        <div class="metric"><div class="label">Active jobs</div><div class="value">${activeJobs}</div><div class="small">Running or dispatched jobs</div></div>
       `;
     }
 
@@ -307,6 +338,7 @@
           <div class="small">${job.job_id}</div>
           <div class="small">${summarizeJob(job)}</div>
           <div class="small">Target: ${job.target_worker || 'pending'} • Policy: ${job.policy || 'unknown'}</div>
+          <div class="small">Submitted: ${formatWhen(job.submitted_at)}</div>
           ${job.deletable ? '<button class="ghost delete-job-btn" data-job-id="' + job.job_id + '" style="margin-top:10px;">Delete queued job</button>' : ''}
         `;
         el.addEventListener('click', async () => {
@@ -395,7 +427,7 @@
       const metrics = resultPayload?.metrics || {};
       const selectedJob = trackedJobs.find(job => job.job_id === status.job_id) || {};
       jobOverview.innerHTML = `
-        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(status.status)}">${status.status || 'unknown'}</div><div class="small">Submitted: ${safe(status.submitted_at)}</div><div class="small">Finished: ${safe(status.finished_at)}</div></div>
+        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(status.status)}">${status.status || 'unknown'}</div><div class="small">Submitted: ${formatWhen(status.submitted_at)}</div><div class="small">Started: ${formatWhen(status.started_at)}</div><div class="small">Finished: ${formatWhen(status.finished_at)}</div></div>
         <div class="detail"><h4>Routing</h4><div class="small">Target worker: ${safe(status.target_worker, 'pending')}</div><div class="small">Actual worker: ${safe(status.worker_name, 'pending')}</div><div class="small">Policy: ${safe(selectedJob.policy, currentClusterStatus?.routing_policy || 'unknown')}</div></div>
         <div class="detail"><h4>Timing</h4><div class="small">Wait: ${safe(metrics.wait_time)}</div><div class="small">Service: ${safe(metrics.service_time)}</div><div class="small">Total: ${safe(metrics.total_time)}</div></div>
         <div class="detail"><h4>Job Type</h4><div class="small">${cap(status.job_type)}</div><div class="small">Job ID: ${status.job_id}</div></div>
@@ -566,7 +598,7 @@
         const status = await fetchStatus(jobId);
         currentJobResult = (status.status === 'completed' || status.status === 'failed') ? await fetchResult(jobId) : null;
         renderLifecycle(status.status || 'unknown');
-        jobSummary.textContent = `${cap(status.job_type)} job ${jobId} is ${status.status}. Target: ${safe(status.target_worker, 'pending')}${status.worker_name ? ' • Worker: ' + status.worker_name : ''}`;
+        jobSummary.textContent = `${cap(status.job_type)} job ${jobId} is ${status.status}. Submitted ${formatWhen(status.submitted_at)}. Target: ${safe(status.target_worker, 'pending')}${status.worker_name ? ' • Worker: ' + status.worker_name : ''}`;
         renderJobOverview(status, currentJobResult);
         await fetchClusterStatus();
       } catch (err) {
