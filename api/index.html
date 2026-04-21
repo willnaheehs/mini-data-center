@@ -29,7 +29,7 @@
     .small { font-size: 0.92rem; }
     .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
     .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.15fr 1fr; }
-    .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+    .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18); }
     label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
     input, select, textarea, button { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
     textarea { min-height: 120px; resize: vertical; }
@@ -47,18 +47,18 @@
     .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .stack { display: grid; gap: 12px; }
     .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-    .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
+    .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(14, 19, 36, 0.95)); }
     .metric .value { font-size: 1.45rem; font-weight: 800; margin-bottom: 6px; }
     .metric .label { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #c7d2fe; }
     .workers-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
+    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(14, 19, 36, 0.95)); }
     .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
     .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
     .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 640px; overflow-y: auto; padding-right: 4px; }
-    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease; }
+    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.98), rgba(12, 18, 34, 0.98)); cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
     .job-item:hover { border-color: #4c6ef5; transform: translateY(-1px); }
-    .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25); }
+    .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25), 0 10px 30px rgba(20, 40, 90, 0.18); }
     .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .lifecycle { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .step { padding: 6px 10px; border-radius: 999px; background: #243157; font-size: 0.85rem; }
@@ -69,7 +69,7 @@
     .artifact-link { color: #a5d8ff; text-decoration: none; }
     details { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: #0d1428; }
     summary { cursor: pointer; color: #d0d9ff; font-weight: 700; }
-    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
+    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; box-shadow: 0 10px 24px rgba(8, 20, 14, 0.28); }
     .banner.show { display: block; }
     .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
   </style>
@@ -92,7 +92,7 @@
       <section class="card stack">
         <div>
           <h2>Cluster Status</h2>
-          <p class="small">Queues, worker activity, routing policy, and recent system state at a glance.</p>
+          <p class="small">Live view of routing, queue depth, and worker activity across the mini data center.</p>
         </div>
         <div class="inline">
           <label for="routing-policy" style="margin:0;">Routing policy</label>
@@ -107,7 +107,7 @@
       <section class="card stack">
         <div>
           <h2>Submit a Job</h2>
-          <p class="small">Pick a workload, send it to the cluster, then watch how the router handles it.</p>
+          <p class="small">Launch a workload and watch it move through the cluster in real time.</p>
         </div>
         <label for="job-type">Job type</label>
         <select id="job-type">
@@ -157,7 +157,7 @@
         <div class="job-header">
           <div>
             <h2>Recent Jobs</h2>
-            <p class="small">Click any job to load details. The selected job stays in focus while auto-refresh runs.</p>
+            <p class="small">A compact activity feed of the latest submitted work.</p>
           </div>
           <div class="inline">
             <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
