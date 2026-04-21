@@ -22,13 +22,13 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #09101d, #0f1630); color: var(--text); }
-    .wrap { max-width: 1300px; margin: 0 auto; padding: 24px; }
+    .wrap { max-width: 1320px; margin: 0 auto; padding: 24px; }
     .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
     h1,h2,h3,h4 { margin: 0 0 12px; }
     p,.muted,.small { color: var(--muted); }
     .small { font-size: 0.92rem; }
     .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
-    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.2fr 1fr; }
+    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.15fr 1fr; }
     .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
     label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
     input, select, textarea, button { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
@@ -36,37 +36,41 @@
     button { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); }
     button.secondary { background: #253055; }
     button.ghost { background: transparent; border: 1px solid var(--border); }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; max-height: 380px; }
     .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: #243157; }
     .pill.ok { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
     .pill.warn { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
     .pill.bad { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
     .pill.blue { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
+    .pill.purple { background: rgba(177, 151, 252, 0.18); color: #d0bfff; }
+    .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .stack { display: grid; gap: 12px; }
     .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
     .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
-    .metric .value { font-size: 1.4rem; font-weight: 800; margin-bottom: 6px; }
+    .metric .value { font-size: 1.45rem; font-weight: 800; margin-bottom: 6px; }
+    .workers-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
+    .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
     .jobs-list { display: grid; gap: 10px; margin-top: 14px; }
-    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; }
-    .job-item:hover { border-color: #4c6ef5; }
+    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease; }
+    .job-item:hover { border-color: #4c6ef5; transform: translateY(-1px); }
     .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25); }
     .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-    .stack { display: grid; gap: 10px; }
     .lifecycle { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .step { padding: 6px 10px; border-radius: 999px; background: #243157; font-size: 0.85rem; }
     .step.active { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
     .step.done { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
     .step.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
-    .artifact-list { display: grid; gap: 8px; margin-top: 12px; }
+    .artifact-list { display: grid; gap: 8px; }
     .artifact-link { color: #a5d8ff; text-decoration: none; }
-    .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
     details { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: #0d1428; }
     summary { cursor: pointer; color: #d0d9ff; font-weight: 700; }
-    .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
-    .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
-    .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
+    .banner.show { display: block; }
+    .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
   </style>
 </head>
 <body>
@@ -74,7 +78,7 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
-        <p>Submit jobs, inspect queues, switch routing strategy, and drill into raw JSON only when you want it.</p>
+        <p>Friendly control surface first, raw payloads when you want to inspect the plumbing.</p>
       </div>
       <div class="inline">
         <span id="health-pill" class="pill">Checking API...</span>
@@ -82,23 +86,29 @@
       </div>
     </div>
 
+    <div id="action-banner" class="banner"></div>
+
     <div class="grid-wide">
       <section class="card stack">
         <div>
           <h2>Cluster Status</h2>
-          <p class="small">Live queue depth, worker busy state, and routing policy.</p>
+          <p class="small">Queues, worker activity, routing policy, and recent system state at a glance.</p>
         </div>
         <div class="inline">
           <label for="routing-policy" style="margin:0;">Routing policy</label>
           <select id="routing-policy" style="max-width:260px;"></select>
           <button id="apply-policy-btn" class="secondary" style="max-width:180px;">Apply policy</button>
+          <button id="refresh-cluster-btn" class="ghost" style="max-width:180px;">Refresh cluster</button>
         </div>
         <div id="cluster-metrics" class="metric-grid"></div>
-        <div id="workers-panel" class="grid"></div>
+        <div id="workers-panel" class="workers-grid"></div>
       </section>
 
-      <section class="card">
-        <h2>Submit a Job</h2>
+      <section class="card stack">
+        <div>
+          <h2>Submit a Job</h2>
+          <p class="small">Pick a workload, send it to the cluster, then watch how the router handles it.</p>
+        </div>
         <label for="job-type">Job type</label>
         <select id="job-type">
           <option value="python_script">Custom Python script</option>
@@ -139,18 +149,20 @@
         </div>
 
         <button id="submit-btn">Submit job</button>
-        <p class="small">Friendly summary first, raw payloads only when you expand them.</p>
       </section>
     </div>
 
     <div class="grid" style="margin-top:20px;">
-      <section class="card">
+      <section class="card stack">
         <div class="job-header">
           <div>
             <h2>Recent Jobs</h2>
-            <p class="small">Click any job to load details.</p>
+            <p class="small">Click any job to load details. The selected job stays in focus while auto-refresh runs.</p>
           </div>
-          <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
+          <div class="inline">
+            <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
+            <button id="refresh-jobs-btn" class="ghost" style="max-width:160px;">Refresh jobs</button>
+          </div>
         </div>
         <div id="jobs-list" class="jobs-list"></div>
       </section>
@@ -168,6 +180,7 @@
         </div>
 
         <div id="job-overview" class="detail-grid"></div>
+        <div id="result-summary" class="detail"></div>
         <div id="lifecycle" class="lifecycle"></div>
         <div id="artifact-links" class="artifact-list"></div>
 
@@ -191,6 +204,8 @@
     const submitBtn = document.getElementById('submit-btn');
     const loadJobBtn = document.getElementById('load-job-btn');
     const applyPolicyBtn = document.getElementById('apply-policy-btn');
+    const refreshClusterBtn = document.getElementById('refresh-cluster-btn');
+    const refreshJobsBtn = document.getElementById('refresh-jobs-btn');
     const jobIdInput = document.getElementById('job-id');
     const statusOutput = document.getElementById('status-output');
     const resultOutput = document.getElementById('result-output');
@@ -205,14 +220,18 @@
     const clusterMetrics = document.getElementById('cluster-metrics');
     const workersPanel = document.getElementById('workers-panel');
     const jobOverview = document.getElementById('job-overview');
+    const resultSummary = document.getElementById('result-summary');
+    const actionBanner = document.getElementById('action-banner');
 
     let trackedJobs = [];
     let currentJobId = '';
     let pollTimer = null;
     let currentClusterStatus = null;
+    let currentJobResult = null;
 
     function pretty(data) { return JSON.stringify(data, null, 2); }
     function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
+    function safe(value, fallback='n/a') { return value === undefined || value === null || value === '' ? fallback : value; }
 
     function setVisibleFields() {
       pythonFields.style.display = jobType.value === 'python_script' ? 'block' : 'none';
@@ -227,14 +246,22 @@
       return 'warn';
     }
 
+    function showBanner(message, kind='ok') {
+      actionBanner.textContent = message;
+      actionBanner.className = `banner show ${kind}`;
+      setTimeout(() => actionBanner.classList.remove('show'), 2600);
+    }
+
     function renderClusterMetrics(cluster) {
       const workers = cluster?.workers || [];
       const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
       const busyCount = workers.filter(worker => worker.busy).length;
+      const activeJobs = (cluster?.recent_jobs || []).filter(job => ['running', 'dispatched'].includes(job.status)).length;
       clusterMetrics.innerHTML = `
         <div class="metric"><div class="value">${cluster.routing_policy}</div><div class="small">Active routing policy</div></div>
         <div class="metric"><div class="value">${totalQueued}</div><div class="small">Total queued jobs</div></div>
         <div class="metric"><div class="value">${busyCount}/${workers.length}</div><div class="small">Workers busy</div></div>
+        <div class="metric"><div class="value">${activeJobs}</div><div class="small">Active jobs</div></div>
       `;
     }
 
@@ -252,16 +279,22 @@
           <div class="small">Queue: ${worker.queue_name}</div>
           <div class="small">Queue depth: ${worker.queue_length}</div>
           <div class="small">Estimated load: ${worker.estimated_load}</div>
+          <div class="small">Busy flag: ${worker.busy_value}</div>
           <div class="queue-bar"><div class="queue-fill" style="width:${width}%"></div></div>
         `;
         workersPanel.appendChild(card);
       });
     }
 
+    function summarizeJob(job) {
+      if (!job) return 'No summary yet';
+      return `${cap(job.job_type)} • ${job.status || 'unknown'}${job.worker_name ? ` • ${job.worker_name}` : ''}${job.result_summary ? ` • ${job.result_summary}` : ''}`;
+    }
+
     function renderTrackedJobs() {
       jobsList.innerHTML = '';
       if (!trackedJobs.length) {
-        jobsList.innerHTML = '<div class="small">Submitted jobs will appear here.</div>';
+        jobsList.innerHTML = '<div class="empty">No jobs yet. Submit one to watch it move through the cluster.</div>';
         return;
       }
       trackedJobs.forEach(job => {
@@ -273,8 +306,8 @@
             <span class="pill ${statusClass(job.status)}">${job.status || 'unknown'}</span>
           </div>
           <div class="small">${job.job_id}</div>
-          <div class="small">Target: ${job.target_worker || 'pending'}${job.worker_name ? ' | Worker: ' + job.worker_name : ''}</div>
-          <div class="small">Policy: ${job.policy || 'unknown'}${job.result_summary ? ' | ' + job.result_summary : ''}</div>
+          <div class="small">${summarizeJob(job)}</div>
+          <div class="small">Target: ${job.target_worker || 'pending'} • Policy: ${job.policy || 'unknown'}</div>
         `;
         el.addEventListener('click', async () => {
           currentJobId = job.job_id;
@@ -299,8 +332,8 @@
           el.classList.add('active');
         } else if ((step === 'submitted') ||
                    (status === 'dispatched' && step === 'submitted') ||
-                   (status === 'running' && ['submitted','dispatched'].includes(step)) ||
-                   (status === 'completed' && ['submitted','dispatched','running'].includes(step))) {
+                   (status === 'running' && ['submitted', 'dispatched'].includes(step)) ||
+                   (status === 'completed' && ['submitted', 'dispatched', 'running'].includes(step))) {
           el.classList.add('done');
         }
         lifecycle.appendChild(el);
@@ -317,7 +350,10 @@
       artifactLinks.innerHTML = '';
       const result = resultPayload?.result || {};
       const outputs = result.output_artifacts || resultPayload?.artifacts?.outputs || [];
-      if (!outputs.length) return;
+      if (!outputs.length) {
+        artifactLinks.innerHTML = '<div class="small">No output artifacts for this job.</div>';
+        return;
+      }
       outputs.forEach(artifact => {
         const link = document.createElement('a');
         link.className = 'artifact-link';
@@ -328,15 +364,36 @@
       });
     }
 
-    function renderJobOverview(status, resultPayload) {
+    function buildFriendlyResult(status, resultPayload) {
       const result = resultPayload?.result || {};
+      if (status.status === 'failed') {
+        return `Job failed${status.worker_name ? ` on ${status.worker_name}` : ''}. ${status.error || resultPayload?.result_summary || 'Check raw JSON for details.'}`;
+      }
+      if (!resultPayload) {
+        return 'Result not ready yet.';
+      }
+      if (status.job_type === 'compute') {
+        return resultPayload.result_summary || 'Compute job completed.';
+      }
+      if (status.job_type === 'ml') {
+        return `Processed ${safe(result.sample_count, 0)} samples and predicted ${safe(result.positive_count, 0)} positives.`;
+      }
+      if (status.job_type === 'python_script') {
+        return `${result.script_name || 'Script'} exited with code ${safe(result.exit_code, 'unknown')} and produced ${(result.output_artifacts || []).length} output artifact(s).`;
+      }
+      return resultPayload.result_summary || 'Job completed.';
+    }
+
+    function renderJobOverview(status, resultPayload) {
       const metrics = resultPayload?.metrics || {};
+      const selectedJob = trackedJobs.find(job => job.job_id === status.job_id) || {};
       jobOverview.innerHTML = `
-        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(status.status)}">${status.status || 'unknown'}</div><div class="small">Submitted: ${status.submitted_at || 'n/a'}</div></div>
-        <div class="detail"><h4>Routing</h4><div class="small">Target worker: ${status.target_worker || 'pending'}</div><div class="small">Actual worker: ${status.worker_name || 'pending'}</div><div class="small">Policy: ${(trackedJobs.find(job => job.job_id === status.job_id) || {}).policy || 'unknown'}</div></div>
-        <div class="detail"><h4>Timing</h4><div class="small">Wait: ${metrics.wait_time ?? 'n/a'}</div><div class="small">Service: ${metrics.service_time ?? 'n/a'}</div><div class="small">Total: ${metrics.total_time ?? 'n/a'}</div></div>
-        <div class="detail"><h4>Result</h4><div class="small">${resultPayload?.result_summary || status.error || 'No result yet'}</div></div>
+        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(status.status)}">${status.status || 'unknown'}</div><div class="small">Submitted: ${safe(status.submitted_at)}</div><div class="small">Finished: ${safe(status.finished_at)}</div></div>
+        <div class="detail"><h4>Routing</h4><div class="small">Target worker: ${safe(status.target_worker, 'pending')}</div><div class="small">Actual worker: ${safe(status.worker_name, 'pending')}</div><div class="small">Policy: ${safe(selectedJob.policy, currentClusterStatus?.routing_policy || 'unknown')}</div></div>
+        <div class="detail"><h4>Timing</h4><div class="small">Wait: ${safe(metrics.wait_time)}</div><div class="small">Service: ${safe(metrics.service_time)}</div><div class="small">Total: ${safe(metrics.total_time)}</div></div>
+        <div class="detail"><h4>Job Type</h4><div class="small">${cap(status.job_type)}</div><div class="small">Job ID: ${status.job_id}</div></div>
       `;
+      resultSummary.innerHTML = `<h4>Friendly result</h4><div class="small">${buildFriendlyResult(status, resultPayload)}</div>`;
     }
 
     async function checkHealth() {
@@ -386,6 +443,7 @@
         if (!res.ok) throw new Error(pretty(data));
         policyPill.textContent = `Policy: ${data.policy}`;
         await fetchClusterStatus();
+        showBanner(`Routing policy changed to ${data.policy}.`, 'ok');
       } catch (err) {
         alert(String(err));
       } finally {
@@ -438,8 +496,10 @@
         await fetchClusterStatus();
         await loadJob(data.job_id);
         startPolling();
+        showBanner(`Submitted job ${data.job_id}.`, 'ok');
       } catch (err) {
         statusOutput.textContent = String(err);
+        resultOutput.textContent = 'Waiting for result...';
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit job';
@@ -459,7 +519,7 @@
       const data = await res.json();
       if (!res.ok) {
         resultOutput.textContent = pretty(data);
-        artifactLinks.innerHTML = '';
+        renderArtifacts(null);
         return null;
       }
       resultOutput.textContent = pretty(data);
@@ -472,13 +532,21 @@
       jobIdInput.value = jobId;
       try {
         const status = await fetchStatus(jobId);
-        const result = (status.status === 'completed' || status.status === 'failed') ? await fetchResult(jobId) : null;
+        currentJobResult = (status.status === 'completed' || status.status === 'failed') ? await fetchResult(jobId) : null;
         renderLifecycle(status.status || 'unknown');
-        jobSummary.textContent = `${cap(status.job_type)} job ${jobId} is ${status.status}. Target: ${status.target_worker || 'pending'}${status.worker_name ? ' | Worker: ' + status.worker_name : ''}`;
-        renderJobOverview(status, result);
+        jobSummary.textContent = `${cap(status.job_type)} job ${jobId} is ${status.status}. Target: ${safe(status.target_worker, 'pending')}${status.worker_name ? ' • Worker: ' + status.worker_name : ''}`;
+        renderJobOverview(status, currentJobResult);
         await fetchClusterStatus();
       } catch (err) {
         statusOutput.textContent = String(err);
+      }
+    }
+
+    async function refreshEverything() {
+      await checkHealth();
+      await fetchClusterStatus();
+      if (currentJobId) {
+        await loadJob(currentJobId);
       }
     }
 
@@ -487,16 +555,12 @@
       if (!autoRefresh.checked) return;
       pollTimer = setInterval(async () => {
         try {
-          await fetchClusterStatus();
+          await refreshEverything();
           if (currentJobId) {
             const status = await fetchStatus(currentJobId);
             if (status.status === 'completed' || status.status === 'failed') {
-              await fetchResult(currentJobId);
-              renderJobOverview(status, await fetch(`/jobs/${currentJobId}/result`).then(r => r.ok ? r.json() : null));
-              stopPolling();
-            } else {
-              renderLifecycle(status.status || 'unknown');
-              renderJobOverview(status, null);
+              currentJobResult = await fetchResult(currentJobId);
+              renderJobOverview(status, currentJobResult);
             }
           }
         } catch (err) {
@@ -514,11 +578,12 @@
     submitBtn.addEventListener('click', submitJob);
     loadJobBtn.addEventListener('click', () => jobIdInput.value.trim() && loadJob(jobIdInput.value.trim()));
     applyPolicyBtn.addEventListener('click', applyRoutingPolicy);
+    refreshClusterBtn.addEventListener('click', refreshEverything);
+    refreshJobsBtn.addEventListener('click', fetchClusterStatus);
     autoRefresh.addEventListener('change', () => autoRefresh.checked ? startPolling() : stopPolling());
 
     setVisibleFields();
-    checkHealth();
-    fetchClusterStatus();
+    refreshEverything();
     startPolling();
   </script>
 </body>
