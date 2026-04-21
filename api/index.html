@@ -285,14 +285,13 @@
     function renderClusterMetrics(cluster) {
       const workers = cluster?.workers || [];
       const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
-      const busyCount = workers.filter(worker => worker.busy).length;
       const activeJobs = (cluster?.recent_jobs || []).filter(job => ['running', 'dispatched'].includes(job.status)).length;
       clusterMetrics.innerHTML = `
         <div class="metric"><div class="label">Policy</div><div class="value">${cluster.routing_policy}</div><div class="small">Current routing strategy</div></div>
-        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div><div class="small">Jobs waiting in Redis queues</div></div>
-        <div class="metric"><div class="label">Workers busy</div><div class="value">${busyCount}/${workers.length}</div><div class="small">Workers actively executing</div></div>
+        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div><div class="small">Jobs waiting in Redis queues</div><div class="queue-bar"><div class="queue-fill" style="width:${Math.min(100, totalQueued * 16)}%"></div></div></div>
         <div class="metric"><div class="label">Active jobs</div><div class="value">${activeJobs}</div><div class="small">Running or dispatched jobs</div></div>
       `;
+    }
     }
 
     function renderWorkers(cluster) {
