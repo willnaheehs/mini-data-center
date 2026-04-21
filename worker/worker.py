@@ -1,6 +1,10 @@
 import csv
 import json
+import math
 import os
+import subprocess
+import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +24,7 @@ METRICS_PORT = int(os.getenv("METRICS_PORT", "8002"))
 JOB_STATUS_PREFIX = os.getenv("JOB_STATUS_PREFIX", "job-status:")
 JOB_RESULT_PREFIX = os.getenv("JOB_RESULT_PREFIX", "job-result:")
 JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", str(7 * 24 * 60 * 60)))
+SCRIPT_WORKDIR_ROOT = os.getenv("SCRIPT_WORKDIR_ROOT", "/tmp/mini-dc-script-runs")
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -70,21 +75,21 @@ worker_wait_seconds = Histogram(
     "mini_dc_worker_wait_seconds",
     "Time spent waiting between submission and execution start",
     ["worker_name", "node_name", "job_type"],
-    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60),
+    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300),
 )
 
 worker_service_seconds = Histogram(
     "mini_dc_worker_service_seconds",
     "Time spent actively executing a job",
     ["worker_name", "node_name", "job_type"],
-    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60),
+    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300),
 )
 
 worker_total_seconds = Histogram(
     "mini_dc_worker_total_seconds",
     "Total time from submission to completion",
     ["worker_name", "node_name", "job_type"],
-    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60),
+    buckets=(0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300),
 )
 
 worker_target_mismatch_total = Counter(
@@ -93,16 +98,10 @@ worker_target_mismatch_total = Counter(
     ["worker_name", "node_name", "target_worker"],
 )
 
-worker_sleep_duration_seconds = Gauge(
-    "mini_dc_worker_sleep_duration_seconds",
-    "Latest observed sleep job duration in seconds",
-    ["worker_name", "node_name"],
-)
-
-worker_cpu_work_units = Gauge(
-    "mini_dc_worker_cpu_work_units",
-    "Latest observed CPU job work units",
-    ["worker_name", "node_name"],
+worker_compute_size = Gauge(
+    "mini_dc_worker_compute_size",
+    "Latest observed compute job size hint",
+    ["worker_name", "node_name", "task"],
 )
 
 
@@ -153,24 +152,13 @@ def get_submit_time(job: dict) -> str:
     return job.get("submit_time") or job.get("submitted_at", "")
 
 
-def get_submit_datetime(job: dict):
-    submit_time_str = get_submit_time(job)
-    if not submit_time_str:
-        return None
-    try:
-        return parse_iso(submit_time_str)
-    except Exception:
-        return None
-
-
 def observe_job_size(job: dict):
     job_type = job.get("job_type", "unknown")
     params = job.get("params", {})
-
-    if job_type == "sleep" and "duration_sec" in params:
-        worker_sleep_duration_seconds.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(params["duration_sec"])
-    elif job_type == "cpu" and "work_units" in params:
-        worker_cpu_work_units.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(params["work_units"])
+    if job_type == "compute":
+        task = params.get("task", "unknown")
+        size_hint = params.get("params", {}).get("n") or params.get("params", {}).get("samples") or params.get("params", {}).get("size") or 0
+        worker_compute_size.labels(worker_name=WORKER_NAME, node_name=NODE_NAME, task=task).set(float(size_hint or 0))
 
 
 def observe_mismatch(job: dict):
@@ -206,25 +194,11 @@ def observe_result_metrics(job: dict, row: dict):
     service_time = row.get("service_time")
 
     if isinstance(wait_time, (int, float)) and wait_time >= 0:
-        worker_wait_seconds.labels(
-            worker_name=WORKER_NAME,
-            node_name=NODE_NAME,
-            job_type=job_type,
-        ).observe(wait_time)
-
+        worker_wait_seconds.labels(worker_name=WORKER_NAME, node_name=NODE_NAME, job_type=job_type).observe(wait_time)
     if isinstance(service_time, (int, float)) and service_time >= 0:
-        worker_service_seconds.labels(
-            worker_name=WORKER_NAME,
-            node_name=NODE_NAME,
-            job_type=job_type,
-        ).observe(service_time)
-
+        worker_service_seconds.labels(worker_name=WORKER_NAME, node_name=NODE_NAME, job_type=job_type).observe(service_time)
     if isinstance(total_time, (int, float)) and total_time >= 0:
-        worker_total_seconds.labels(
-            worker_name=WORKER_NAME,
-            node_name=NODE_NAME,
-            job_type=job_type,
-        ).observe(total_time)
+        worker_total_seconds.labels(worker_name=WORKER_NAME, node_name=NODE_NAME, job_type=job_type).observe(total_time)
 
     worker_last_job_timestamp.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(time.time())
 
@@ -233,7 +207,6 @@ def build_result_row(job: dict, started_at: datetime, finished_at: datetime, sta
     submit_time_str = get_submit_time(job)
     wait_time = ""
     total_time = ""
-
     if submit_time_str:
         try:
             submitted_dt = parse_iso(submit_time_str)
@@ -263,12 +236,13 @@ def build_result_row(job: dict, started_at: datetime, finished_at: datetime, sta
 
 
 def build_result_payload(job: dict, row: dict, extra_result: dict | None = None):
-    payload = {
+    return {
         "job_id": row["job_id"],
         "job_type": job.get("api_job_type", job.get("job_type", "unknown")),
         "worker_job_type": job.get("job_type", "unknown"),
         "status": row["status"],
         "submitted_at": row["submit_time"],
+        "dispatched_at": job.get("dispatched_at"),
         "started_at": row["start_time"],
         "finished_at": row["finish_time"],
         "worker_name": WORKER_NAME,
@@ -282,7 +256,6 @@ def build_result_payload(job: dict, row: dict, extra_result: dict | None = None)
         },
         "metadata": job.get("metadata", {}),
     }
-    return payload
 
 
 def persist_job_status(job: dict, row: dict, extra_result: dict | None = None, error: str | None = None):
@@ -293,6 +266,7 @@ def persist_job_status(job: dict, row: dict, extra_result: dict | None = None, e
         "status": row["status"],
         "job_type": job.get("api_job_type", job.get("job_type", "unknown")),
         "submitted_at": row["submit_time"],
+        "dispatched_at": job.get("dispatched_at"),
         "started_at": row["start_time"],
         "finished_at": row["finish_time"],
         "worker_name": WORKER_NAME,
@@ -302,6 +276,16 @@ def persist_job_status(job: dict, row: dict, extra_result: dict | None = None, e
     }
     redis_set_json(f"{JOB_STATUS_PREFIX}{job_id}", status_payload)
     redis_set_json(f"{JOB_RESULT_PREFIX}{job_id}", result_payload)
+
+
+def update_job_running_status(job: dict, started_at: datetime):
+    status_doc = redis_get_json(f"{JOB_STATUS_PREFIX}{job['job_id']}") if job.get("job_id") else None
+    if status_doc is not None:
+        status_doc["status"] = "running"
+        status_doc["started_at"] = started_at.isoformat()
+        status_doc["worker_name"] = WORKER_NAME
+        status_doc["target_worker"] = job.get("target_worker") or None
+        redis_set_json(f"{JOB_STATUS_PREFIX}{job['job_id']}", status_doc)
 
 
 def write_failed_result(job, started_at: datetime, error_msg: str):
@@ -317,232 +301,192 @@ def validate_job(job: dict):
     for key in required_keys:
         if key not in job:
             raise ValueError(f"missing required field: {key}")
-
     if not get_submit_time(job):
         raise ValueError("missing submit_time/submitted_at")
-
     if not isinstance(job["params"], dict):
         raise ValueError("params must be a dictionary")
-
     parse_iso(get_submit_time(job))
 
-    if job["job_type"] == "sleep":
-        if "duration_sec" not in job["params"]:
-            raise ValueError("missing params.duration_sec")
-        duration = job["params"]["duration_sec"]
-        if not isinstance(duration, (int, float)):
-            raise ValueError("params.duration_sec must be numeric")
-        if duration <= 0:
-            raise ValueError("params.duration_sec must be positive")
-
-    elif job["job_type"] == "cpu":
-        if "work_units" not in job["params"]:
-            raise ValueError("missing params.work_units")
-        work_units = job["params"]["work_units"]
-        if not isinstance(work_units, int):
-            raise ValueError("params.work_units must be an integer")
-        if work_units <= 0:
-            raise ValueError("params.work_units must be positive")
-
-    elif job["job_type"] == "file":
-        operation = job["params"].get("operation")
-        if operation not in {"word_count", "line_count", "byte_count"}:
-            raise ValueError("file jobs require supported operation: word_count, line_count, or byte_count")
-        file_path = job["params"].get("file_path")
-        if not file_path or not isinstance(file_path, str):
-            raise ValueError("file jobs require params.file_path")
-
+    if job["job_type"] == "compute":
+        task = job["params"].get("task")
+        if task not in {"prime_count", "monte_carlo_pi", "sort_numbers", "matrix_multiply"}:
+            raise ValueError("unsupported compute task")
     elif job["job_type"] == "ml":
         operation = job["params"].get("operation")
-        if operation != "threshold_classify":
-            raise ValueError("ml jobs currently support only threshold_classify")
-        values = job["params"].get("values")
-        if not isinstance(values, list) or not values:
-            raise ValueError("ml jobs require a non-empty params.values list")
-        threshold = job["params"].get("threshold")
-        if not isinstance(threshold, (int, float)):
-            raise ValueError("ml jobs require numeric params.threshold")
-
+        if operation != "linear_binary_classify":
+            raise ValueError("ml jobs currently support only linear_binary_classify")
+    elif job["job_type"] == "python_script":
+        script_path = job["params"].get("script_path")
+        if not script_path:
+            raise ValueError("python_script job requires script_path")
     else:
         raise ValueError(f"unsupported job_type: {job['job_type']}")
 
 
-def process_sleep_job(job: dict):
-    duration = job["params"]["duration_sec"]
-    started_at = datetime.now(timezone.utc)
-
-    print(
-        f"Worker {WORKER_NAME} received sleep job {job['job_id']} from queue {QUEUE_NAME} "
-        f"targeted for {job.get('target_worker', 'unknown')}"
-    )
-    print(f"Worker {WORKER_NAME} starting sleep job {job['job_id']} for {duration} sec")
-
-    time.sleep(duration)
-
-    finished_at = datetime.now(timezone.utc)
-    row = build_result_row(
-        job,
-        started_at,
-        finished_at,
-        "completed",
-        f"slept for {duration} seconds",
-    )
-    append_result_row(row)
-    observe_result_metrics(job, row)
-    persist_job_status(
-        job,
-        row,
-        extra_result={
-            "duration_sec": duration,
-            "message": f"slept for {duration} seconds",
-        },
-    )
-
-    print(f"Worker {WORKER_NAME} finished sleep job {job['job_id']} in {row['service_time']:.2f} sec")
-
-
-def is_prime(n: int) -> bool:
-    if n < 2:
-        return False
-    if n == 2:
-        return True
-    if n % 2 == 0:
-        return False
-
-    limit = int(n ** 0.5) + 1
-    for i in range(3, limit, 2):
-        if n % i == 0:
+def count_primes(limit: int) -> int:
+    def is_prime(n: int) -> bool:
+        if n < 2:
             return False
-    return True
+        if n == 2:
+            return True
+        if n % 2 == 0:
+            return False
+        upper = int(n ** 0.5) + 1
+        for i in range(3, upper, 2):
+            if n % i == 0:
+                return False
+        return True
 
-
-def process_cpu_job(job: dict):
-    work_units = job["params"]["work_units"]
-    started_at = datetime.now(timezone.utc)
-
-    print(
-        f"Worker {WORKER_NAME} received cpu job {job['job_id']} from queue {QUEUE_NAME} "
-        f"targeted for {job.get('target_worker', 'unknown')}"
-    )
-    print(f"Worker {WORKER_NAME} starting cpu job {job['job_id']} with work_units={work_units}")
-
-    prime_count = 0
-    for n in range(2, work_units + 1):
+    total = 0
+    for n in range(2, limit + 1):
         if is_prime(n):
-            prime_count += 1
-
-    finished_at = datetime.now(timezone.utc)
-    row = build_result_row(
-        job,
-        started_at,
-        finished_at,
-        "completed",
-        f"counted {prime_count} primes up to {work_units}",
-    )
-    append_result_row(row)
-    observe_result_metrics(job, row)
-    persist_job_status(
-        job,
-        row,
-        extra_result={
-            "work_units": work_units,
-            "prime_count": prime_count,
-            "message": f"counted {prime_count} primes up to {work_units}",
-        },
-    )
-
-    print(f"Worker {WORKER_NAME} finished cpu job {job['job_id']} in {row['service_time']:.2f} sec")
+            total += 1
+    return total
 
 
-def process_file_job(job: dict):
+def process_compute_job(job: dict):
     params = job["params"]
-    operation = params["operation"]
-    file_path = Path(params["file_path"])
+    task = params["task"]
+    task_params = params.get("params", {})
     started_at = datetime.now(timezone.utc)
 
-    if not file_path.exists():
-        raise FileNotFoundError(f"input file not found: {file_path}")
+    print(f"Worker {WORKER_NAME} starting compute job {job['job_id']} task={task}")
 
-    print(
-        f"Worker {WORKER_NAME} received file job {job['job_id']} from queue {QUEUE_NAME} "
-        f"targeted for {job.get('target_worker', 'unknown')}"
-    )
-    print(f"Worker {WORKER_NAME} starting file job {job['job_id']} with operation={operation} path={file_path}")
-
-    content = file_path.read_bytes()
-    if operation == "byte_count":
-        result_value = len(content)
+    if task == "prime_count":
+        n = int(task_params.get("n", 10000))
+        value = count_primes(n)
+        result = {"task": task, "n": n, "prime_count": value}
+        summary = f"counted {value} primes up to {n}"
+    elif task == "monte_carlo_pi":
+        samples = int(task_params.get("samples", 100000))
+        inside = 0
+        for i in range(samples):
+            x = ((i * 9301 + 49297) % 233280) / 233280.0
+            y = ((i * 233280 + 49297) % 9301) / 9301.0
+            if x * x + y * y <= 1:
+                inside += 1
+        estimate = 4.0 * inside / samples
+        result = {"task": task, "samples": samples, "pi_estimate": estimate}
+        summary = f"estimated pi as {estimate:.6f} using {samples} samples"
+    elif task == "sort_numbers":
+        values = task_params.get("values")
+        if not isinstance(values, list) or not values:
+            raise ValueError("sort_numbers requires params.values list")
+        sorted_values = sorted(values)
+        result = {"task": task, "count": len(values), "sorted_values": sorted_values}
+        summary = f"sorted {len(values)} numbers"
+    elif task == "matrix_multiply":
+        size = int(task_params.get("size", 12))
+        a = [[(row + col) % 7 + 1 for col in range(size)] for row in range(size)]
+        b = [[(row * col) % 5 + 1 for col in range(size)] for row in range(size)]
+        c = [[0 for _ in range(size)] for _ in range(size)]
+        for i in range(size):
+            for j in range(size):
+                total = 0
+                for k in range(size):
+                    total += a[i][k] * b[k][j]
+                c[i][j] = total
+        checksum = sum(sum(row) for row in c)
+        result = {"task": task, "size": size, "checksum": checksum}
+        summary = f"multiplied {size}x{size} matrices"
     else:
-        text = content.decode("utf-8")
-        if operation == "line_count":
-            result_value = len(text.splitlines())
-        elif operation == "word_count":
-            result_value = len(text.split())
-        else:
-            raise ValueError(f"unsupported file operation: {operation}")
+        raise ValueError(f"unsupported compute task: {task}")
 
     finished_at = datetime.now(timezone.utc)
-    row = build_result_row(
-        job,
-        started_at,
-        finished_at,
-        "completed",
-        f"{operation}={result_value} for {file_path.name}",
-    )
+    row = build_result_row(job, started_at, finished_at, "completed", summary)
     append_result_row(row)
     observe_result_metrics(job, row)
-    persist_job_status(
-        job,
-        row,
-        extra_result={
-            "operation": operation,
-            "file_name": params.get("file_name", file_path.name),
-            "file_path": str(file_path),
-            "value": result_value,
-        },
-    )
+    persist_job_status(job, row, extra_result=result)
 
-    print(f"Worker {WORKER_NAME} finished file job {job['job_id']} in {row['service_time']:.2f} sec")
+
+def sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
 
 
 def process_ml_job(job: dict):
     params = job["params"]
-    values = params["values"]
-    threshold = params["threshold"]
+    features = params["features"]
+    weights = params["weights"]
+    bias = float(params.get("bias", 0.0))
+    threshold = float(params.get("threshold", 0.5))
     started_at = datetime.now(timezone.utc)
 
-    print(
-        f"Worker {WORKER_NAME} received ml job {job['job_id']} from queue {QUEUE_NAME} "
-        f"targeted for {job.get('target_worker', 'unknown')}"
-    )
-    print(f"Worker {WORKER_NAME} starting ml job {job['job_id']} with threshold={threshold}")
+    print(f"Worker {WORKER_NAME} starting ml job {job['job_id']} operation=linear_binary_classify")
 
-    predictions = [1 if value >= threshold else 0 for value in values]
+    scores = []
+    predictions = []
+    for row in features:
+        if len(row) != len(weights):
+            raise ValueError("each feature row must match weights length")
+        score = sum(value * weight for value, weight in zip(row, weights)) + bias
+        probability = sigmoid(score)
+        scores.append(probability)
+        predictions.append(1 if probability >= threshold else 0)
+
     positive_count = sum(predictions)
-
     finished_at = datetime.now(timezone.utc)
-    row = build_result_row(
-        job,
-        started_at,
-        finished_at,
-        "completed",
-        f"classified {len(values)} samples with {positive_count} positives",
-    )
+    row = build_result_row(job, started_at, finished_at, "completed", f"classified {len(features)} samples")
     append_result_row(row)
     observe_result_metrics(job, row)
     persist_job_status(
         job,
         row,
         extra_result={
-            "operation": params.get("operation", "threshold_classify"),
-            "threshold": threshold,
-            "sample_count": len(values),
-            "positive_count": positive_count,
+            "operation": "linear_binary_classify",
+            "sample_count": len(features),
+            "scores": scores,
             "predictions": predictions,
+            "positive_count": positive_count,
+            "threshold": threshold,
         },
     )
 
-    print(f"Worker {WORKER_NAME} finished ml job {job['job_id']} in {row['service_time']:.2f} sec")
+
+def process_python_script_job(job: dict):
+    params = job["params"]
+    script_path = Path(params["script_path"])
+    timeout_seconds = int(params.get("timeout_seconds", 30))
+    started_at = datetime.now(timezone.utc)
+
+    if not script_path.exists():
+        raise FileNotFoundError(f"script not found: {script_path}")
+
+    os.makedirs(SCRIPT_WORKDIR_ROOT, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{job['job_id']}-", dir=SCRIPT_WORKDIR_ROOT) as workdir:
+        copied_script = Path(workdir) / script_path.name
+        copied_script.write_bytes(script_path.read_bytes())
+
+        completed = subprocess.run(
+            [sys.executable, str(copied_script)],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+
+        stdout_text = completed.stdout[-12000:]
+        stderr_text = completed.stderr[-12000:]
+        exit_code = completed.returncode
+        status = "completed" if exit_code == 0 else "failed"
+        summary = f"python script exited with code {exit_code}"
+        finished_at = datetime.now(timezone.utc)
+        row = build_result_row(job, started_at, finished_at, status, summary)
+        append_result_row(row)
+        observe_result_metrics(job, row)
+        persist_job_status(
+            job,
+            row,
+            extra_result={
+                "script_name": params.get("script_name", script_path.name),
+                "exit_code": exit_code,
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+            },
+            error=None if exit_code == 0 else stderr_text or f"script exited with code {exit_code}",
+        )
+
+        if exit_code != 0:
+            print(f"Worker {WORKER_NAME} python job {job['job_id']} failed with code {exit_code}")
 
 
 def main():
@@ -556,39 +500,32 @@ def main():
         _, raw_job = r.brpop(QUEUE_NAME)
         started_at = datetime.now(timezone.utc)
         set_worker_busy(True)
-
         try:
             job = json.loads(raw_job)
             validate_job(job)
             observe_job_size(job)
             observe_mismatch(job)
+            update_job_running_status(job, started_at)
 
-            status_doc = redis_get_json(f"{JOB_STATUS_PREFIX}{job['job_id']}") if job.get("job_id") else None
-            if status_doc is not None:
-                status_doc["status"] = "running"
-                status_doc["started_at"] = started_at.isoformat()
-                status_doc["worker_name"] = WORKER_NAME
-                status_doc["target_worker"] = job.get("target_worker") or None
-                redis_set_json(f"{JOB_STATUS_PREFIX}{job['job_id']}", status_doc)
-
-            if job["job_type"] == "sleep":
-                process_sleep_job(job)
-            elif job["job_type"] == "cpu":
-                process_cpu_job(job)
-            elif job["job_type"] == "file":
-                process_file_job(job)
+            if job["job_type"] == "compute":
+                process_compute_job(job)
             elif job["job_type"] == "ml":
                 process_ml_job(job)
-
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Worker {WORKER_NAME} failed to process job: {error_msg}")
-
+            elif job["job_type"] == "python_script":
+                process_python_script_job(job)
+        except subprocess.TimeoutExpired:
             try:
                 parsed_job = json.loads(raw_job) if isinstance(raw_job, str) else {"raw_job": str(raw_job)}
             except Exception:
                 parsed_job = {"raw_job": str(raw_job)}
-
+            write_failed_result(parsed_job, started_at, "script execution timed out")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"Worker {WORKER_NAME} failed to process job: {error_msg}")
+            try:
+                parsed_job = json.loads(raw_job) if isinstance(raw_job, str) else {"raw_job": str(raw_job)}
+            except Exception:
+                parsed_job = {"raw_job": str(raw_job)}
             write_failed_result(parsed_job, started_at, error_msg)
         finally:
             set_worker_busy(False)

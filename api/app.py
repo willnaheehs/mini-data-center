@@ -31,7 +31,7 @@ JOB_PAYLOAD_PREFIX = os.getenv("JOB_PAYLOAD_PREFIX", "job-payload:")
 JOB_INDEX_KEY = os.getenv("JOB_INDEX_KEY", "jobs-api:index")
 JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", str(7 * 24 * 60 * 60)))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/data/uploads")
-WORKER_SHARED_UPLOAD_DIR = os.getenv("WORKER_SHARED_UPLOAD_DIR", "/shared-api-data/uploads")
+SCRIPT_MAX_BYTES = int(os.getenv("SCRIPT_MAX_BYTES", str(256 * 1024)))
 RESULT_BASE_URL = os.getenv("RESULT_BASE_URL", "")
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -39,23 +39,20 @@ app = FastAPI(title="mini-data-center api", version="0.1.0")
 
 
 class ComputeParams(BaseModel):
-    work_units: int = Field(..., gt=0)
-
-
-class FileParams(BaseModel):
-    operation: Literal["word_count", "line_count", "byte_count"] = "word_count"
-    file_name: str
-    file_path: Optional[str] = None
+    task: Literal["prime_count", "monte_carlo_pi", "sort_numbers", "matrix_multiply"]
+    params: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MlParams(BaseModel):
-    operation: Literal["threshold_classify"] = "threshold_classify"
-    values: list[float] = Field(..., min_length=1)
+    operation: Literal["linear_binary_classify"] = "linear_binary_classify"
+    features: list[list[float]] = Field(..., min_length=1)
+    weights: list[float] = Field(..., min_length=1)
+    bias: float = 0.0
     threshold: float = 0.5
 
 
 class JobCreateRequest(BaseModel):
-    type: Literal["compute", "file", "ml"]
+    type: Literal["compute", "ml"]
     params: Dict[str, Any]
     client_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -73,6 +70,7 @@ class JobStatusResponse(BaseModel):
     status: str
     job_type: Optional[str] = None
     submitted_at: Optional[str] = None
+    dispatched_at: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     worker_name: Optional[str] = None
@@ -105,11 +103,6 @@ def payload_key(job_id: str) -> str:
 
 def ensure_upload_dir() -> None:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    os.makedirs(WORKER_SHARED_UPLOAD_DIR, exist_ok=True)
-
-
-def build_shared_worker_file_path(file_name: str) -> str:
-    return os.path.join(WORKER_SHARED_UPLOAD_DIR, file_name)
 
 
 def redis_set_json(key: str, payload: dict) -> None:
@@ -180,23 +173,14 @@ def choose_target() -> dict:
     raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {ROUTING_POLICY}")
 
 
-def normalize_job(request: JobCreateRequest, uploaded_file_path: Optional[str] = None) -> dict:
+def normalize_job(request: JobCreateRequest) -> dict:
     job_id = str(uuid.uuid4())
     submitted_at = utc_now()
 
     if request.type == "compute":
         parsed = ComputeParams.model_validate(request.params)
         worker_job = {
-            "job_type": "cpu",
-            "params": {"work_units": parsed.work_units},
-        }
-    elif request.type == "file":
-        params = dict(request.params)
-        if uploaded_file_path and "file_path" not in params:
-            params["file_path"] = uploaded_file_path
-        parsed = FileParams.model_validate(params)
-        worker_job = {
-            "job_type": "file",
+            "job_type": "compute",
             "params": parsed.model_dump(),
         }
     elif request.type == "ml":
@@ -209,19 +193,21 @@ def normalize_job(request: JobCreateRequest, uploaded_file_path: Optional[str] =
         raise HTTPException(status_code=400, detail=f"unsupported job type: {request.type}")
 
     target = choose_target()
+    dispatched_at = utc_now()
     return {
         "job_id": job_id,
         "job_type": worker_job["job_type"],
         "api_job_type": request.type,
         "submit_time": submitted_at,
         "submitted_at": submitted_at,
+        "dispatched_at": dispatched_at,
         "params": worker_job["params"],
         "policy": ROUTING_POLICY,
         "target_worker": target["worker_name"],
         "target_queue": target["queue_name"],
         "client_id": request.client_id,
         "metadata": request.metadata,
-        "status": "queued",
+        "status": "dispatched",
         "dispatcher_decision": {
             "policy": ROUTING_POLICY,
             "selection_reason": "api submission",
@@ -241,9 +227,10 @@ def store_initial_job_state(job: dict) -> None:
     job_id = job["job_id"]
     status_doc = {
         "job_id": job_id,
-        "status": "queued",
+        "status": "dispatched",
         "job_type": job.get("api_job_type", job.get("job_type")),
         "submitted_at": job["submitted_at"],
+        "dispatched_at": job.get("dispatched_at"),
         "started_at": None,
         "finished_at": None,
         "worker_name": None,
@@ -270,72 +257,79 @@ def healthz() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/files", response_model=FileUploadResponse)
-async def upload_file(file: UploadFile = File(...)) -> FileUploadResponse:
-    ensure_upload_dir()
-    safe_name = f"{uuid.uuid4()}-{os.path.basename(file.filename or 'upload.bin')}"
-    destination = os.path.join(UPLOAD_DIR, safe_name)
-
-    bytes_written = 0
-    with open(destination, "wb") as f:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            f.write(chunk)
-            bytes_written += len(chunk)
-
-    return FileUploadResponse(file_name=file.filename or safe_name, file_path=destination, bytes_written=bytes_written)
-
-
 @app.post("/jobs", response_model=JobCreateResponse)
 def create_job(request: JobCreateRequest) -> JobCreateResponse:
     job = normalize_job(request)
     store_initial_job_state(job)
     r.lpush(job["target_queue"], json.dumps(job))
     status_url, result_url = build_status_urls(job["job_id"])
-    return JobCreateResponse(job_id=job["job_id"], status="queued", status_url=status_url, result_url=result_url)
+    return JobCreateResponse(job_id=job["job_id"], status=job["status"], status_url=status_url, result_url=result_url)
 
 
-@app.post("/jobs/file", response_model=JobCreateResponse)
-async def create_file_job(
-    operation: str = Form("word_count"),
+@app.post("/jobs/python", response_model=JobCreateResponse)
+async def create_python_job(
     client_id: Optional[str] = Form(None),
     metadata_json: str = Form("{}"),
-    file: UploadFile = File(...),
+    timeout_seconds: int = Form(30),
+    script: UploadFile = File(...),
 ) -> JobCreateResponse:
     ensure_upload_dir()
-    safe_name = f"{uuid.uuid4()}-{os.path.basename(file.filename or 'upload.bin')}"
-    destination = os.path.join(UPLOAD_DIR, safe_name)
 
+    if not (script.filename or "").endswith(".py"):
+        raise HTTPException(status_code=400, detail="only .py files are supported")
+
+    content = await script.read()
+    if len(content) > SCRIPT_MAX_BYTES:
+        raise HTTPException(status_code=400, detail=f"script exceeds {SCRIPT_MAX_BYTES} bytes limit")
+
+    safe_name = f"{uuid.uuid4()}-{os.path.basename(script.filename or 'job.py')}"
+    destination = os.path.join(UPLOAD_DIR, safe_name)
     with open(destination, "wb") as f:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            f.write(chunk)
+        f.write(content)
 
     try:
         metadata = json.loads(metadata_json)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="metadata_json must be valid JSON") from exc
 
-    request = JobCreateRequest(
-        type="file",
-        params={
-            "operation": operation,
-            "file_name": file.filename or safe_name,
-            "file_path": build_shared_worker_file_path(safe_name),
-            "api_upload_path": destination,
+    target = choose_target()
+    submitted_at = utc_now()
+    job_id = str(uuid.uuid4())
+    job = {
+        "job_id": job_id,
+        "job_type": "python_script",
+        "api_job_type": "python_script",
+        "submit_time": submitted_at,
+        "submitted_at": submitted_at,
+        "dispatched_at": utc_now(),
+        "params": {
+            "script_name": script.filename or safe_name,
+            "script_path": destination,
+            "timeout_seconds": max(1, min(timeout_seconds, 300)),
         },
-        client_id=client_id,
-        metadata=metadata,
-    )
-    job = normalize_job(request, uploaded_file_path=destination)
+        "policy": ROUTING_POLICY,
+        "target_worker": target["worker_name"],
+        "target_queue": target["queue_name"],
+        "client_id": client_id,
+        "metadata": metadata,
+        "status": "dispatched",
+        "dispatcher_decision": {
+            "policy": ROUTING_POLICY,
+            "selection_reason": "api submission",
+            "load_snapshot": {
+                target["worker_name"]: {
+                    "queue_name": target["queue_name"],
+                    "queue_length": target.get("queue_length", 0),
+                    "busy_value": target.get("busy_value", 0),
+                    "estimated_load": target.get("estimated_load", 0),
+                }
+            },
+        },
+    }
     store_initial_job_state(job)
     r.lpush(job["target_queue"], json.dumps(job))
-    status_url, result_url = build_status_urls(job["job_id"])
-    return JobCreateResponse(job_id=job["job_id"], status="queued", status_url=status_url, result_url=result_url)
+    status_url, result_url = build_status_urls(job_id)
+    return JobCreateResponse(job_id=job_id, status="dispatched", status_url=status_url, result_url=result_url)
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatusResponse)

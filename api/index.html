@@ -12,103 +12,37 @@
       --panel-2: #1c2440;
       --text: #eef2ff;
       --muted: #a9b4d0;
-      --accent: #74c0fc;
+      --border: #2d375d;
       --ok: #51cf66;
       --warn: #fcc419;
       --bad: #ff6b6b;
-      --border: #2d375d;
+      --blue: #74c0fc;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Inter, system-ui, sans-serif;
-      background: linear-gradient(180deg, #09101d, #0f1630);
-      color: var(--text);
-    }
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-    h1, h2, h3 { margin: 0 0 12px; }
-    p { color: var(--muted); }
-    .grid {
-      display: grid;
-      gap: 20px;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    }
-    .card {
-      background: rgba(21, 27, 47, 0.96);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-    }
-    label {
-      display: block;
-      font-size: 0.92rem;
-      margin: 12px 0 6px;
-      color: var(--muted);
-    }
-    input, select, textarea, button {
-      width: 100%;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--panel-2);
-      color: var(--text);
-      padding: 12px;
-      font: inherit;
-    }
-    textarea { min-height: 130px; resize: vertical; }
-    button {
-      background: linear-gradient(135deg, #339af0, #5c7cfa);
-      border: none;
-      font-weight: 700;
-      cursor: pointer;
-      margin-top: 14px;
-    }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #09101d, #0f1630); color: var(--text); }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+    h1,h2,h3 { margin: 0 0 12px; }
+    p,.muted,.small { color: var(--muted); }
+    .small { font-size: 0.92rem; }
+    .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+    .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+    label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
+    input, select, textarea, button { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
+    textarea { min-height: 150px; resize: vertical; }
+    button { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); }
     button.secondary { background: #253055; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .pill {
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 0.85rem;
-      font-weight: 700;
-      background: #243157;
-      color: var(--text);
-    }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; }
+    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: #243157; }
     .pill.ok { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
-    .pill.warn { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
-    .pill.bad { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #0c1225;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      overflow-x: auto;
-      color: #dbe4ff;
-    }
-    .muted { color: var(--muted); font-size: 0.92rem; }
-    .hero {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-    .small { font-size: 0.9rem; color: var(--muted); }
     .jobs-list { display: grid; gap: 10px; margin-top: 14px; }
-    .job-item {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px;
-      background: #10182d;
-      cursor: pointer;
-    }
-    .job-item strong { display: block; margin-bottom: 4px; }
+    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; }
+    .lifecycle { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .step { padding: 6px 10px; border-radius: 999px; background: #243157; font-size: 0.85rem; }
+    .step.active { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
+    .step.done { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
+    .step.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
   </style>
 </head>
 <body>
@@ -116,11 +50,9 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
-        <p>Submit jobs, track routing, and view results without touching curl.</p>
+        <p>Submit your own jobs, route them across workers, and watch the lifecycle clearly.</p>
       </div>
-      <div>
-        <span id="health-pill" class="pill">Checking API...</span>
-      </div>
+      <span id="health-pill" class="pill">Checking API...</span>
     </div>
 
     <div class="grid">
@@ -128,36 +60,43 @@
         <h2>1. Submit a Job</h2>
         <label for="job-type">Job type</label>
         <select id="job-type">
-          <option value="compute">Compute</option>
-          <option value="file">File processing</option>
-          <option value="ml">Small ML</option>
+          <option value="python_script">Custom Python script</option>
+          <option value="compute">Built-in compute</option>
+          <option value="ml">ML inference</option>
         </select>
 
-        <div id="compute-fields">
-          <label for="work-units">Work units</label>
-          <input id="work-units" type="number" value="25000" min="1" />
+        <div id="python-fields">
+          <label for="python-file">Python script (.py)</label>
+          <input id="python-file" type="file" accept=".py" />
+          <label for="python-timeout">Timeout seconds</label>
+          <input id="python-timeout" type="number" min="1" max="300" value="30" />
         </div>
 
-        <div id="file-fields" style="display:none;">
-          <label for="file-operation">File operation</label>
-          <select id="file-operation">
-            <option value="word_count">Word count</option>
-            <option value="line_count">Line count</option>
-            <option value="byte_count">Byte count</option>
+        <div id="compute-fields" style="display:none;">
+          <label for="compute-task">Compute task</label>
+          <select id="compute-task">
+            <option value="prime_count">Prime count</option>
+            <option value="monte_carlo_pi">Monte Carlo pi</option>
+            <option value="sort_numbers">Sort numbers</option>
+            <option value="matrix_multiply">Matrix multiply</option>
           </select>
-          <label for="file-input">Choose file</label>
-          <input id="file-input" type="file" />
+          <label for="compute-json">Task params (JSON)</label>
+          <textarea id="compute-json">{"n": 25000}</textarea>
         </div>
 
         <div id="ml-fields" style="display:none;">
-          <label for="ml-values">Values (comma-separated)</label>
-          <input id="ml-values" type="text" value="0.1, 0.7, 0.9, 0.3" />
-          <label for="ml-threshold">Threshold</label>
-          <input id="ml-threshold" type="number" value="0.5" step="0.01" />
+          <label for="ml-json">ML params (JSON)</label>
+          <textarea id="ml-json">{
+  "operation": "linear_binary_classify",
+  "features": [[0.2, 0.8], [0.9, 0.1], [0.5, 0.6]],
+  "weights": [1.2, -0.7],
+  "bias": 0.1,
+  "threshold": 0.5
+}</textarea>
         </div>
 
         <button id="submit-btn">Submit job</button>
-        <p class="small">The API routes the job to one of the worker queues and returns a job ID.</p>
+        <p class="small">Custom Python scripts are uploaded, queued, executed on a worker, and their output is returned.</p>
       </section>
 
       <section class="card">
@@ -168,11 +107,9 @@
           <button id="status-btn" class="secondary">Check status</button>
           <button id="result-btn" class="secondary">Fetch result</button>
         </div>
-        <label>
-          <input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />
-          Auto-refresh every 2 seconds
-        </label>
-        <div id="job-summary" class="muted" style="margin-top:12px;">No job loaded yet.</div>
+        <label><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh every 2 seconds</label>
+        <div id="job-summary" class="small" style="margin-top:12px;">No job loaded yet.</div>
+        <div id="lifecycle" class="lifecycle"></div>
         <div id="jobs-list" class="jobs-list"></div>
       </section>
     </div>
@@ -191,33 +128,42 @@
 
   <script>
     const jobType = document.getElementById('job-type');
+    const pythonFields = document.getElementById('python-fields');
     const computeFields = document.getElementById('compute-fields');
-    const fileFields = document.getElementById('file-fields');
     const mlFields = document.getElementById('ml-fields');
-    const healthPill = document.getElementById('health-pill');
     const submitBtn = document.getElementById('submit-btn');
     const statusBtn = document.getElementById('status-btn');
     const resultBtn = document.getElementById('result-btn');
     const jobIdInput = document.getElementById('job-id');
     const statusOutput = document.getElementById('status-output');
     const resultOutput = document.getElementById('result-output');
-    const jobSummary = document.getElementById('job-summary');
-    const autoRefresh = document.getElementById('auto-refresh');
+    const healthPill = document.getElementById('health-pill');
     const jobsList = document.getElementById('jobs-list');
+    const autoRefresh = document.getElementById('auto-refresh');
+    const jobSummary = document.getElementById('job-summary');
+    const lifecycle = document.getElementById('lifecycle');
 
-    let pollTimer = null;
     const trackedJobs = [];
+    let pollTimer = null;
+
+    function pretty(data) { return JSON.stringify(data, null, 2); }
+
+    function setVisibleFields() {
+      pythonFields.style.display = jobType.value === 'python_script' ? 'block' : 'none';
+      computeFields.style.display = jobType.value === 'compute' ? 'block' : 'none';
+      mlFields.style.display = jobType.value === 'ml' ? 'block' : 'none';
+    }
 
     function renderTrackedJobs() {
       jobsList.innerHTML = '';
       if (!trackedJobs.length) {
-        jobsList.innerHTML = '<div class="muted">Submitted jobs will appear here.</div>';
+        jobsList.innerHTML = '<div class="small">Submitted jobs will appear here.</div>';
         return;
       }
       trackedJobs.forEach(job => {
         const el = document.createElement('div');
         el.className = 'job-item';
-        el.innerHTML = `<strong>${job.type} job</strong><div>${job.id}</div><div class="small">${job.status || 'queued'}${job.worker ? ' | ' + job.worker : ''}</div>`;
+        el.innerHTML = `<strong>${job.type}</strong><div>${job.id}</div><div class="small">${job.status || 'dispatched'}${job.worker ? ' | ' + job.worker : ''}</div>`;
         el.addEventListener('click', async () => {
           jobIdInput.value = job.id;
           await fetchStatus();
@@ -227,28 +173,41 @@
       });
     }
 
-    function setVisibleFields() {
-      computeFields.style.display = jobType.value === 'compute' ? 'block' : 'none';
-      fileFields.style.display = jobType.value === 'file' ? 'block' : 'none';
-      mlFields.style.display = jobType.value === 'ml' ? 'block' : 'none';
-    }
-
-    function pretty(data) {
-      return JSON.stringify(data, null, 2);
-    }
-
-    function setHealth(ok, text) {
-      healthPill.textContent = text;
-      healthPill.className = `pill ${ok ? 'ok' : 'bad'}`;
+    function renderLifecycle(status) {
+      const steps = ['submitted', 'dispatched', 'running', 'completed'];
+      lifecycle.innerHTML = '';
+      steps.forEach(step => {
+        const el = document.createElement('span');
+        el.className = 'step';
+        el.textContent = step;
+        if (status === 'failed' && (step === 'running' || step === 'completed')) {
+          if (step === 'running') el.classList.add('failed');
+        } else if (step === status) {
+          el.classList.add('active');
+        } else if ((step === 'submitted') ||
+                   (status === 'dispatched' && step === 'submitted') ||
+                   (status === 'running' && ['submitted','dispatched'].includes(step)) ||
+                   (status === 'completed' && ['submitted','dispatched','running'].includes(step))) {
+          el.classList.add('done');
+        }
+        lifecycle.appendChild(el);
+      });
+      if (status === 'failed') {
+        const failed = document.createElement('span');
+        failed.className = 'step failed';
+        failed.textContent = 'failed';
+        lifecycle.appendChild(failed);
+      }
     }
 
     async function checkHealth() {
       try {
         const res = await fetch('/healthz');
         const data = await res.json();
-        setHealth(res.ok, res.ok ? 'API online' : `API issue: ${pretty(data)}`);
-      } catch (err) {
-        setHealth(false, 'API unreachable');
+        healthPill.textContent = res.ok ? 'API online' : 'API issue';
+        healthPill.className = `pill ${res.ok ? 'ok' : ''}`;
+      } catch {
+        healthPill.textContent = 'API unreachable';
       }
     }
 
@@ -257,49 +216,45 @@
       submitBtn.textContent = 'Submitting...';
       try {
         let response;
-        if (jobType.value === 'compute') {
+        if (jobType.value === 'python_script') {
+          const fileInput = document.getElementById('python-file');
+          if (!fileInput.files.length) throw new Error('Choose a Python file first');
+          const form = new FormData();
+          form.append('script', fileInput.files[0]);
+          form.append('timeout_seconds', document.getElementById('python-timeout').value);
+          response = await fetch('/jobs/python', { method: 'POST', body: form });
+        } else if (jobType.value === 'compute') {
           response = await fetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               type: 'compute',
-              params: { work_units: Number(document.getElementById('work-units').value) }
+              params: {
+                task: document.getElementById('compute-task').value,
+                params: JSON.parse(document.getElementById('compute-json').value)
+              }
             })
           });
-        } else if (jobType.value === 'ml') {
-          const values = document.getElementById('ml-values').value
-            .split(',')
-            .map(v => Number(v.trim()))
-            .filter(v => !Number.isNaN(v));
+        } else {
           response = await fetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               type: 'ml',
-              params: {
-                operation: 'threshold_classify',
-                values,
-                threshold: Number(document.getElementById('ml-threshold').value)
-              }
+              params: JSON.parse(document.getElementById('ml-json').value)
             })
           });
-        } else {
-          const fileInput = document.getElementById('file-input');
-          if (!fileInput.files.length) throw new Error('Choose a file first');
-          const form = new FormData();
-          form.append('operation', document.getElementById('file-operation').value);
-          form.append('file', fileInput.files[0]);
-          response = await fetch('/jobs/file', { method: 'POST', body: form });
         }
 
         const data = await response.json();
         if (!response.ok) throw new Error(pretty(data));
         jobIdInput.value = data.job_id;
-        trackedJobs.unshift({ id: data.job_id, type: jobType.value, status: 'queued', worker: '' });
+        trackedJobs.unshift({ id: data.job_id, type: jobType.value, status: data.status || 'dispatched', worker: '' });
         renderTrackedJobs();
         statusOutput.textContent = pretty(data);
         resultOutput.textContent = 'Waiting for result...';
         jobSummary.textContent = `Job ${data.job_id} submitted.`;
+        renderLifecycle(data.status || 'dispatched');
         await fetchStatus();
         startPolling();
       } catch (err) {
@@ -318,15 +273,15 @@
         const data = await res.json();
         statusOutput.textContent = pretty(data);
         if (!res.ok) throw new Error(pretty(data));
-        const status = data.status || 'unknown';
         const tracked = trackedJobs.find(job => job.id === jobId);
         if (tracked) {
-          tracked.status = status;
+          tracked.status = data.status || 'unknown';
           tracked.worker = data.worker_name || data.target_worker || '';
           renderTrackedJobs();
         }
-        jobSummary.textContent = `Status: ${status} | Worker: ${data.worker_name || 'pending'} | Target: ${data.target_worker || 'pending'}`;
-        if (status === 'completed' || status === 'failed') {
+        jobSummary.textContent = `Status: ${data.status} | Worker: ${data.worker_name || 'pending'} | Target: ${data.target_worker || 'pending'}`;
+        renderLifecycle(data.status || 'unknown');
+        if (data.status === 'completed' || data.status === 'failed') {
           stopPolling();
           await fetchResult();
         }
@@ -354,10 +309,8 @@
     }
 
     function stopPolling() {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
     }
 
     jobType.addEventListener('change', setVisibleFields);
@@ -369,6 +322,7 @@
     setVisibleFields();
     checkHealth();
     renderTrackedJobs();
+    renderLifecycle('submitted');
   </script>
 </body>
 </html>
