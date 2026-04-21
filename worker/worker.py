@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -153,6 +154,28 @@ def set_worker_busy(is_busy: bool):
     else:
         r.set(BUSY_KEY, busy_value)
     worker_busy.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(busy_value)
+
+
+class BusyHeartbeat:
+    def __init__(self, interval_seconds: int | None = None):
+        self.interval_seconds = interval_seconds or max(5, BUSY_KEY_TTL_SEC // 3)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.wait(self.interval_seconds):
+            try:
+                r.set(BUSY_KEY, 1, ex=BUSY_KEY_TTL_SEC)
+                worker_busy.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(1)
+            except Exception as exc:
+                print(f"Worker {WORKER_NAME} failed to refresh busy heartbeat: {exc}")
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=1)
 
 
 def get_submit_time(job: dict) -> str:
@@ -565,6 +588,8 @@ def main():
         _, raw_job = r.brpop(QUEUE_NAME)
         started_at = datetime.now(timezone.utc)
         set_worker_busy(True)
+        heartbeat = BusyHeartbeat()
+        heartbeat.start()
         try:
             job = json.loads(raw_job)
             validate_job(job)
@@ -593,6 +618,7 @@ def main():
                 parsed_job = {"raw_job": str(raw_job)}
             write_failed_result(parsed_job, started_at, error_msg)
         finally:
+            heartbeat.stop()
             set_worker_busy(False)
 
 
