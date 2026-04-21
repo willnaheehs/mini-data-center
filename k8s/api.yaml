@@ -44,6 +44,8 @@ spec:
               value: "604800"
             - name: UPLOAD_DIR
               value: "/data/uploads"
+            - name: WORKER_SHARED_UPLOAD_DIR
+              value: "/shared-api-data/uploads"
           ports:
             - name: http
               containerPort: 8000
@@ -51,6 +53,8 @@ spec:
           volumeMounts:
             - name: api-data
               mountPath: /data
+            - name: api-data
+              mountPath: /shared-api-data
       volumes:
         - name: api-data
           hostPath:

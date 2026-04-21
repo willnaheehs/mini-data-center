@@ -31,6 +31,7 @@ JOB_PAYLOAD_PREFIX = os.getenv("JOB_PAYLOAD_PREFIX", "job-payload:")
 JOB_INDEX_KEY = os.getenv("JOB_INDEX_KEY", "jobs-api:index")
 JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", str(7 * 24 * 60 * 60)))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/data/uploads")
+WORKER_SHARED_UPLOAD_DIR = os.getenv("WORKER_SHARED_UPLOAD_DIR", "/shared-api-data/uploads")
 RESULT_BASE_URL = os.getenv("RESULT_BASE_URL", "")
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -104,6 +105,11 @@ def payload_key(job_id: str) -> str:
 
 def ensure_upload_dir() -> None:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(WORKER_SHARED_UPLOAD_DIR, exist_ok=True)
+
+
+def build_shared_worker_file_path(file_name: str) -> str:
+    return os.path.join(WORKER_SHARED_UPLOAD_DIR, file_name)
 
 
 def redis_set_json(key: str, payload: dict) -> None:
@@ -319,7 +325,8 @@ async def create_file_job(
         params={
             "operation": operation,
             "file_name": file.filename or safe_name,
-            "file_path": destination,
+            "file_path": build_shared_worker_file_path(safe_name),
+            "api_upload_path": destination,
         },
         client_id=client_id,
         metadata=metadata,

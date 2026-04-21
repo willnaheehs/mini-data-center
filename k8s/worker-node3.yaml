@@ -43,8 +43,14 @@ spec:
           volumeMounts:
             - name: job-logs
               mountPath: /data
+            - name: shared-api-data
+              mountPath: /shared-api-data
       volumes:
         - name: job-logs
           hostPath:
             path: /tmp/mini-dc-logs
+            type: DirectoryOrCreate
+        - name: shared-api-data
+          hostPath:
+            path: /tmp/mini-dc-api
             type: DirectoryOrCreate

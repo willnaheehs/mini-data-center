@@ -100,6 +100,15 @@
       margin-bottom: 20px;
     }
     .small { font-size: 0.9rem; color: var(--muted); }
+    .jobs-list { display: grid; gap: 10px; margin-top: 14px; }
+    .job-item {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #10182d;
+      cursor: pointer;
+    }
+    .job-item strong { display: block; margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -152,9 +161,9 @@
       </section>
 
       <section class="card">
-        <h2>2. Track a Job</h2>
-        <label for="job-id">Job ID</label>
-        <input id="job-id" type="text" placeholder="Paste a job id here" />
+        <h2>2. Track Jobs</h2>
+        <label for="job-id">Selected job ID</label>
+        <input id="job-id" type="text" placeholder="Paste a job id here or click one below" />
         <div class="row">
           <button id="status-btn" class="secondary">Check status</button>
           <button id="result-btn" class="secondary">Fetch result</button>
@@ -164,6 +173,7 @@
           Auto-refresh every 2 seconds
         </label>
         <div id="job-summary" class="muted" style="margin-top:12px;">No job loaded yet.</div>
+        <div id="jobs-list" class="jobs-list"></div>
       </section>
     </div>
 
@@ -193,8 +203,29 @@
     const resultOutput = document.getElementById('result-output');
     const jobSummary = document.getElementById('job-summary');
     const autoRefresh = document.getElementById('auto-refresh');
+    const jobsList = document.getElementById('jobs-list');
 
     let pollTimer = null;
+    const trackedJobs = [];
+
+    function renderTrackedJobs() {
+      jobsList.innerHTML = '';
+      if (!trackedJobs.length) {
+        jobsList.innerHTML = '<div class="muted">Submitted jobs will appear here.</div>';
+        return;
+      }
+      trackedJobs.forEach(job => {
+        const el = document.createElement('div');
+        el.className = 'job-item';
+        el.innerHTML = `<strong>${job.type} job</strong><div>${job.id}</div><div class="small">${job.status || 'queued'}${job.worker ? ' | ' + job.worker : ''}</div>`;
+        el.addEventListener('click', async () => {
+          jobIdInput.value = job.id;
+          await fetchStatus();
+          await fetchResult();
+        });
+        jobsList.appendChild(el);
+      });
+    }
 
     function setVisibleFields() {
       computeFields.style.display = jobType.value === 'compute' ? 'block' : 'none';
@@ -264,6 +295,8 @@
         const data = await response.json();
         if (!response.ok) throw new Error(pretty(data));
         jobIdInput.value = data.job_id;
+        trackedJobs.unshift({ id: data.job_id, type: jobType.value, status: 'queued', worker: '' });
+        renderTrackedJobs();
         statusOutput.textContent = pretty(data);
         resultOutput.textContent = 'Waiting for result...';
         jobSummary.textContent = `Job ${data.job_id} submitted.`;
@@ -286,6 +319,12 @@
         statusOutput.textContent = pretty(data);
         if (!res.ok) throw new Error(pretty(data));
         const status = data.status || 'unknown';
+        const tracked = trackedJobs.find(job => job.id === jobId);
+        if (tracked) {
+          tracked.status = status;
+          tracked.worker = data.worker_name || data.target_worker || '';
+          renderTrackedJobs();
+        }
         jobSummary.textContent = `Status: ${status} | Worker: ${data.worker_name || 'pending'} | Target: ${data.target_worker || 'pending'}`;
         if (status === 'completed' || status === 'failed') {
           stopPolling();
@@ -329,6 +368,7 @@
 
     setVisibleFields();
     checkHealth();
+    renderTrackedJobs();
   </script>
 </body>
 </html>
