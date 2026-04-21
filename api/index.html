@@ -54,7 +54,7 @@
     .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
     .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
     .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
-    .jobs-list { display: grid; gap: 10px; margin-top: 14px; }
+    .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 640px; overflow-y: auto; padding-right: 4px; }
     .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease; }
     .job-item:hover { border-color: #4c6ef5; transform: translateY(-1px); }
     .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25); }
@@ -78,7 +78,6 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
-        <p>Friendly control surface first, raw payloads when you want to inspect the plumbing.</p>
       </div>
       <div class="inline">
         <span id="health-pill" class="pill">Checking API...</span>
