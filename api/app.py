@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import random
 import sys
 import time
 import uuid
@@ -22,7 +23,8 @@ from common.storage import artifact_url, download_bytes, ensure_bucket_exists, u
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
-ROUTING_POLICY = os.getenv("ROUTING_POLICY", "shortest_queue").strip().lower()
+DEFAULT_ROUTING_POLICY = os.getenv("ROUTING_POLICY", "shortest_queue").strip().lower()
+ROUTING_POLICY_KEY = os.getenv("ROUTING_POLICY_KEY", "mini-dc-api:routing-policy")
 WORKER_QUEUES = [
     {
         "worker_name": os.getenv("WORKER_NODE2_NAME", "node2-worker"),
@@ -35,6 +37,7 @@ WORKER_QUEUES = [
         "busy_key": os.getenv("BUSY_KEY_NODE3", "busy-node3"),
     },
 ]
+SUPPORTED_ROUTING_POLICIES = ["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
 JOB_STATUS_PREFIX = os.getenv("JOB_STATUS_PREFIX", "job-status:")
 JOB_RESULT_PREFIX = os.getenv("JOB_RESULT_PREFIX", "job-result:")
 JOB_PAYLOAD_PREFIX = os.getenv("JOB_PAYLOAD_PREFIX", "job-payload:")
@@ -45,9 +48,10 @@ SCRIPT_MAX_BYTES = int(os.getenv("SCRIPT_MAX_BYTES", str(256 * 1024)))
 RESULT_BASE_URL = os.getenv("RESULT_BASE_URL", "")
 MAX_INPUT_FILES = int(os.getenv("MAX_INPUT_FILES", "8"))
 MAX_INPUT_FILE_BYTES = int(os.getenv("MAX_INPUT_FILE_BYTES", str(5 * 1024 * 1024)))
+RECENT_JOBS_LIMIT = int(os.getenv("RECENT_JOBS_LIMIT", "20"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-app = FastAPI(title="mini-data-center api", version="0.2.0")
+app = FastAPI(title="mini-data-center api", version="0.3.0")
 
 
 class ComputeParams(BaseModel):
@@ -89,6 +93,10 @@ class JobStatusResponse(BaseModel):
     target_worker: Optional[str] = None
     error: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
+
+
+class RoutingPolicyUpdateRequest(BaseModel):
+    policy: Literal["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
 
 
 class FileUploadResponse(BaseModel):
@@ -137,6 +145,20 @@ def build_status_urls(job_id: str) -> tuple[str, str]:
     return f"/jobs/{job_id}", f"/jobs/{job_id}/result"
 
 
+def get_current_routing_policy() -> str:
+    stored = r.get(ROUTING_POLICY_KEY)
+    if stored and stored in SUPPORTED_ROUTING_POLICIES:
+        return stored
+    return DEFAULT_ROUTING_POLICY
+
+
+def set_current_routing_policy(policy: str) -> str:
+    if policy not in SUPPORTED_ROUTING_POLICIES:
+        raise HTTPException(status_code=400, detail=f"unsupported routing policy: {policy}")
+    r.set(ROUTING_POLICY_KEY, policy)
+    return policy
+
+
 def get_queue_length(queue_name: str) -> int:
     return int(r.llen(queue_name))
 
@@ -153,15 +175,46 @@ def get_busy_value(busy_key: str) -> int:
         return 0
 
 
+def get_cluster_snapshot() -> dict:
+    workers = []
+    for worker in WORKER_QUEUES:
+        queue_length = get_queue_length(worker["queue_name"])
+        busy_value = get_busy_value(worker["busy_key"])
+        workers.append(
+            {
+                "worker_name": worker["worker_name"],
+                "queue_name": worker["queue_name"],
+                "busy_key": worker["busy_key"],
+                "queue_length": queue_length,
+                "busy": bool(busy_value),
+                "busy_value": busy_value,
+                "estimated_load": queue_length + busy_value,
+            }
+        )
+    return {
+        "routing_policy": get_current_routing_policy(),
+        "workers": workers,
+        "updated_at": utc_now(),
+    }
+
+
 def choose_target() -> dict:
-    if ROUTING_POLICY == "round_robin":
+    routing_policy = get_current_routing_policy()
+    if routing_policy == "round_robin":
         counter = r.incr("mini-dc-api:round-robin-index") - 1
-        return WORKER_QUEUES[counter % len(WORKER_QUEUES)]
+        target = WORKER_QUEUES[counter % len(WORKER_QUEUES)]
+        return {
+            **target,
+            "queue_length": get_queue_length(target["queue_name"]),
+            "busy_value": get_busy_value(target["busy_key"]),
+            "estimated_load": get_queue_length(target["queue_name"]) + get_busy_value(target["busy_key"]),
+            "policy": routing_policy,
+        }
 
     candidates = []
     for worker in WORKER_QUEUES:
         queue_length = get_queue_length(worker["queue_name"])
-        busy_value = get_busy_value(worker["busy_key"]) if ROUTING_POLICY in {"state_aware", "adaptive"} else 0
+        busy_value = get_busy_value(worker["busy_key"]) if routing_policy in {"state_aware", "adaptive"} else get_busy_value(worker["busy_key"]) if routing_policy == "power_of_two" else 0
         estimated_load = queue_length + busy_value
         candidates.append(
             {
@@ -172,18 +225,16 @@ def choose_target() -> dict:
             }
         )
 
-    if ROUTING_POLICY == "power_of_two":
-        import random
-
+    if routing_policy == "power_of_two":
         sampled = random.sample(candidates, k=min(2, len(candidates)))
         sampled.sort(key=lambda item: (item["estimated_load"], item["queue_length"], item["worker_name"]))
-        return sampled[0]
+        return {**sampled[0], "policy": routing_policy}
 
-    if ROUTING_POLICY in {"shortest_queue", "state_aware", "adaptive"}:
+    if routing_policy in {"shortest_queue", "state_aware", "adaptive"}:
         candidates.sort(key=lambda item: (item["estimated_load"], item["queue_length"], item["worker_name"]))
-        return candidates[0]
+        return {**candidates[0], "policy": routing_policy}
 
-    raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {ROUTING_POLICY}")
+    raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {routing_policy}")
 
 
 def normalize_job(request: JobCreateRequest) -> dict:
@@ -206,6 +257,7 @@ def normalize_job(request: JobCreateRequest) -> dict:
         raise HTTPException(status_code=400, detail=f"unsupported job type: {request.type}")
 
     target = choose_target()
+    policy = target.get("policy", get_current_routing_policy())
     dispatched_at = utc_now()
     return {
         "job_id": job_id,
@@ -215,7 +267,7 @@ def normalize_job(request: JobCreateRequest) -> dict:
         "submitted_at": submitted_at,
         "dispatched_at": dispatched_at,
         "params": worker_job["params"],
-        "policy": ROUTING_POLICY,
+        "policy": policy,
         "target_worker": target["worker_name"],
         "target_queue": target["queue_name"],
         "client_id": request.client_id,
@@ -223,15 +275,16 @@ def normalize_job(request: JobCreateRequest) -> dict:
         "artifacts": {"inputs": [], "outputs": []},
         "status": "dispatched",
         "dispatcher_decision": {
-            "policy": ROUTING_POLICY,
+            "policy": policy,
             "selection_reason": "api submission",
             "load_snapshot": {
-                target["worker_name"]: {
-                    "queue_name": target["queue_name"],
-                    "queue_length": target.get("queue_length", 0),
-                    "busy_value": target.get("busy_value", 0),
-                    "estimated_load": target.get("estimated_load", 0),
+                item["worker_name"]: {
+                    "queue_name": item["queue_name"],
+                    "queue_length": item["queue_length"],
+                    "busy_value": item["busy_value"],
+                    "estimated_load": item["estimated_load"],
                 }
+                for item in get_cluster_snapshot()["workers"]
             },
         },
     }
@@ -284,6 +337,31 @@ async def persist_upload(job_id: str, upload: UploadFile, category: str, max_byt
     return artifact
 
 
+def get_recent_jobs(limit: int = RECENT_JOBS_LIMIT) -> list[dict]:
+    job_ids = r.zrevrange(JOB_INDEX_KEY, 0, max(0, limit - 1))
+    jobs = []
+    for job_id in job_ids:
+        status_doc = redis_get_json(status_key(job_id))
+        payload_doc = redis_get_json(payload_key(job_id))
+        if status_doc is None:
+            continue
+        jobs.append(
+            {
+                "job_id": job_id,
+                "status": status_doc.get("status"),
+                "job_type": status_doc.get("job_type"),
+                "submitted_at": status_doc.get("submitted_at"),
+                "started_at": status_doc.get("started_at"),
+                "finished_at": status_doc.get("finished_at"),
+                "worker_name": status_doc.get("worker_name"),
+                "target_worker": status_doc.get("target_worker"),
+                "policy": (payload_doc or {}).get("policy"),
+                "result_summary": (redis_get_json(result_key(job_id)) or {}).get("result_summary"),
+            }
+        )
+    return jobs
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
@@ -296,7 +374,37 @@ def healthz() -> dict:
         ensure_bucket_exists()
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"dependency unavailable: {exc}") from exc
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "routing_policy": get_current_routing_policy(),
+    }
+
+
+@app.get("/cluster/status")
+def cluster_status() -> dict:
+    return {
+        **get_cluster_snapshot(),
+        "recent_jobs": get_recent_jobs(),
+        "supported_routing_policies": SUPPORTED_ROUTING_POLICIES,
+    }
+
+
+@app.get("/routing-policy")
+def get_routing_policy() -> dict:
+    return {
+        "policy": get_current_routing_policy(),
+        "supported": SUPPORTED_ROUTING_POLICIES,
+    }
+
+
+@app.post("/routing-policy")
+def update_routing_policy(request: RoutingPolicyUpdateRequest) -> dict:
+    policy = set_current_routing_policy(request.policy)
+    return {
+        "policy": policy,
+        "supported": SUPPORTED_ROUTING_POLICIES,
+        "updated_at": utc_now(),
+    }
 
 
 @app.post("/jobs", response_model=JobCreateResponse)
@@ -337,6 +445,8 @@ async def create_python_job(
         uploaded_inputs.append(await persist_upload(job_id, upload, "input", MAX_INPUT_FILE_BYTES))
 
     target = choose_target()
+    policy = target.get("policy", get_current_routing_policy())
+    cluster_snapshot = get_cluster_snapshot()
     job = {
         "job_id": job_id,
         "job_type": "python_script",
@@ -350,7 +460,7 @@ async def create_python_job(
             "input_artifacts": uploaded_inputs,
             "timeout_seconds": max(1, min(timeout_seconds, 300)),
         },
-        "policy": ROUTING_POLICY,
+        "policy": policy,
         "target_worker": target["worker_name"],
         "target_queue": target["queue_name"],
         "client_id": client_id,
@@ -361,15 +471,16 @@ async def create_python_job(
         },
         "status": "dispatched",
         "dispatcher_decision": {
-            "policy": ROUTING_POLICY,
+            "policy": policy,
             "selection_reason": "api submission",
             "load_snapshot": {
-                target["worker_name"]: {
-                    "queue_name": target["queue_name"],
-                    "queue_length": target.get("queue_length", 0),
-                    "busy_value": target.get("busy_value", 0),
-                    "estimated_load": target.get("estimated_load", 0),
+                item["worker_name"]: {
+                    "queue_name": item["queue_name"],
+                    "queue_length": item["queue_length"],
+                    "busy_value": item["busy_value"],
+                    "estimated_load": item["estimated_load"],
                 }
+                for item in cluster_snapshot["workers"]
             },
         },
     }

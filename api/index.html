@@ -10,6 +10,7 @@
       --bg: #0b1020;
       --panel: #151b2f;
       --panel-2: #1c2440;
+      --panel-3: #0f1630;
       --text: #eef2ff;
       --muted: #a9b4d0;
       --border: #2d375d;
@@ -17,27 +18,41 @@
       --warn: #fcc419;
       --bad: #ff6b6b;
       --blue: #74c0fc;
+      --purple: #b197fc;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #09101d, #0f1630); color: var(--text); }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .wrap { max-width: 1300px; margin: 0 auto; padding: 24px; }
     .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
-    h1,h2,h3 { margin: 0 0 12px; }
+    h1,h2,h3,h4 { margin: 0 0 12px; }
     p,.muted,.small { color: var(--muted); }
     .small { font-size: 0.92rem; }
     .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.2fr 1fr; }
     .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
     label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
     input, select, textarea, button { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
-    textarea { min-height: 150px; resize: vertical; }
+    textarea { min-height: 120px; resize: vertical; }
     button { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); }
     button.secondary { background: #253055; }
+    button.ghost { background: transparent; border: 1px solid var(--border); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; }
+    .triple { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; max-height: 380px; }
     .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: #243157; }
     .pill.ok { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
+    .pill.warn { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
+    .pill.bad { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
+    .pill.blue { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
+    .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
+    .metric .value { font-size: 1.4rem; font-weight: 800; margin-bottom: 6px; }
     .jobs-list { display: grid; gap: 10px; margin-top: 14px; }
     .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: #10182d; cursor: pointer; }
+    .job-item:hover { border-color: #4c6ef5; }
+    .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25); }
+    .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .stack { display: grid; gap: 10px; }
     .lifecycle { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .step { padding: 6px 10px; border-radius: 999px; background: #243157; font-size: 0.85rem; }
     .step.active { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
@@ -45,6 +60,13 @@
     .step.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
     .artifact-list { display: grid; gap: 8px; margin-top: 12px; }
     .artifact-link { color: #a5d8ff; text-decoration: none; }
+    .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: #10182d; }
+    details { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: #0d1428; }
+    summary { cursor: pointer; color: #d0d9ff; font-weight: 700; }
+    .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
+    .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -52,14 +74,31 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
-        <p>Upload scripts and data, route them to any worker, and fetch outputs from shared artifact storage.</p>
+        <p>Submit jobs, inspect queues, switch routing strategy, and drill into raw JSON only when you want it.</p>
       </div>
-      <span id="health-pill" class="pill">Checking API...</span>
+      <div class="inline">
+        <span id="health-pill" class="pill">Checking API...</span>
+        <span id="policy-pill" class="pill blue">Policy: loading...</span>
+      </div>
     </div>
 
-    <div class="grid">
+    <div class="grid-wide">
+      <section class="card stack">
+        <div>
+          <h2>Cluster Status</h2>
+          <p class="small">Live queue depth, worker busy state, and routing policy.</p>
+        </div>
+        <div class="inline">
+          <label for="routing-policy" style="margin:0;">Routing policy</label>
+          <select id="routing-policy" style="max-width:260px;"></select>
+          <button id="apply-policy-btn" class="secondary" style="max-width:180px;">Apply policy</button>
+        </div>
+        <div id="cluster-metrics" class="metric-grid"></div>
+        <div id="workers-panel" class="grid"></div>
+      </section>
+
       <section class="card">
-        <h2>1. Submit a Job</h2>
+        <h2>Submit a Job</h2>
         <label for="job-type">Job type</label>
         <select id="job-type">
           <option value="python_script">Custom Python script</option>
@@ -100,33 +139,46 @@
         </div>
 
         <button id="submit-btn">Submit job</button>
-        <p class="small">Python jobs now use shared artifact storage, so uploaded scripts and input files can be executed on any worker.</p>
-      </section>
-
-      <section class="card">
-        <h2>2. Track Jobs</h2>
-        <label for="job-id">Selected job ID</label>
-        <input id="job-id" type="text" placeholder="Paste a job id here or click one below" />
-        <div class="row">
-          <button id="status-btn" class="secondary">Check status</button>
-          <button id="result-btn" class="secondary">Fetch result</button>
-        </div>
-        <label><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh every 2 seconds</label>
-        <div id="job-summary" class="small" style="margin-top:12px;">No job loaded yet.</div>
-        <div id="lifecycle" class="lifecycle"></div>
-        <div id="jobs-list" class="jobs-list"></div>
+        <p class="small">Friendly summary first, raw payloads only when you expand them.</p>
       </section>
     </div>
 
     <div class="grid" style="margin-top:20px;">
       <section class="card">
-        <h3>Status</h3>
-        <pre id="status-output">Waiting for status...</pre>
+        <div class="job-header">
+          <div>
+            <h2>Recent Jobs</h2>
+            <p class="small">Click any job to load details.</p>
+          </div>
+          <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
+        </div>
+        <div id="jobs-list" class="jobs-list"></div>
       </section>
-      <section class="card">
-        <h3>Result</h3>
-        <pre id="result-output">Waiting for result...</pre>
+
+      <section class="card stack">
+        <div class="job-header">
+          <div>
+            <h2>Job Details</h2>
+            <p id="job-summary" class="small">Select a job to inspect it.</p>
+          </div>
+          <div class="inline">
+            <input id="job-id" type="text" placeholder="Paste a job id" style="max-width:280px;" />
+            <button id="load-job-btn" class="secondary" style="max-width:140px;">Load job</button>
+          </div>
+        </div>
+
+        <div id="job-overview" class="detail-grid"></div>
+        <div id="lifecycle" class="lifecycle"></div>
         <div id="artifact-links" class="artifact-list"></div>
+
+        <details>
+          <summary>View raw status JSON</summary>
+          <pre id="status-output">Waiting for status...</pre>
+        </details>
+        <details>
+          <summary>View raw result JSON</summary>
+          <pre id="result-output">Waiting for result...</pre>
+        </details>
       </section>
     </div>
   </div>
@@ -137,27 +189,73 @@
     const computeFields = document.getElementById('compute-fields');
     const mlFields = document.getElementById('ml-fields');
     const submitBtn = document.getElementById('submit-btn');
-    const statusBtn = document.getElementById('status-btn');
-    const resultBtn = document.getElementById('result-btn');
+    const loadJobBtn = document.getElementById('load-job-btn');
+    const applyPolicyBtn = document.getElementById('apply-policy-btn');
     const jobIdInput = document.getElementById('job-id');
     const statusOutput = document.getElementById('status-output');
     const resultOutput = document.getElementById('result-output');
     const artifactLinks = document.getElementById('artifact-links');
     const healthPill = document.getElementById('health-pill');
+    const policyPill = document.getElementById('policy-pill');
     const jobsList = document.getElementById('jobs-list');
     const autoRefresh = document.getElementById('auto-refresh');
     const jobSummary = document.getElementById('job-summary');
     const lifecycle = document.getElementById('lifecycle');
+    const routingPolicySelect = document.getElementById('routing-policy');
+    const clusterMetrics = document.getElementById('cluster-metrics');
+    const workersPanel = document.getElementById('workers-panel');
+    const jobOverview = document.getElementById('job-overview');
 
-    const trackedJobs = [];
+    let trackedJobs = [];
+    let currentJobId = '';
     let pollTimer = null;
+    let currentClusterStatus = null;
 
     function pretty(data) { return JSON.stringify(data, null, 2); }
+    function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
 
     function setVisibleFields() {
       pythonFields.style.display = jobType.value === 'python_script' ? 'block' : 'none';
       computeFields.style.display = jobType.value === 'compute' ? 'block' : 'none';
       mlFields.style.display = jobType.value === 'ml' ? 'block' : 'none';
+    }
+
+    function statusClass(status) {
+      if (status === 'completed') return 'ok';
+      if (status === 'failed') return 'bad';
+      if (status === 'running') return 'blue';
+      return 'warn';
+    }
+
+    function renderClusterMetrics(cluster) {
+      const workers = cluster?.workers || [];
+      const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
+      const busyCount = workers.filter(worker => worker.busy).length;
+      clusterMetrics.innerHTML = `
+        <div class="metric"><div class="value">${cluster.routing_policy}</div><div class="small">Active routing policy</div></div>
+        <div class="metric"><div class="value">${totalQueued}</div><div class="small">Total queued jobs</div></div>
+        <div class="metric"><div class="value">${busyCount}/${workers.length}</div><div class="small">Workers busy</div></div>
+      `;
+    }
+
+    function renderWorkers(cluster) {
+      workersPanel.innerHTML = '';
+      (cluster?.workers || []).forEach(worker => {
+        const card = document.createElement('div');
+        card.className = 'detail';
+        const width = Math.min(100, (worker.queue_length || 0) * 20);
+        card.innerHTML = `
+          <div class="job-header">
+            <strong>${worker.worker_name}</strong>
+            <span class="pill ${worker.busy ? 'warn' : 'ok'}">${worker.busy ? 'Busy' : 'Idle'}</span>
+          </div>
+          <div class="small">Queue: ${worker.queue_name}</div>
+          <div class="small">Queue depth: ${worker.queue_length}</div>
+          <div class="small">Estimated load: ${worker.estimated_load}</div>
+          <div class="queue-bar"><div class="queue-fill" style="width:${width}%"></div></div>
+        `;
+        workersPanel.appendChild(card);
+      });
     }
 
     function renderTrackedJobs() {
@@ -168,12 +266,21 @@
       }
       trackedJobs.forEach(job => {
         const el = document.createElement('div');
-        el.className = 'job-item';
-        el.innerHTML = `<strong>${job.type}</strong><div>${job.id}</div><div class="small">${job.status || 'dispatched'}${job.worker ? ' | ' + job.worker : ''}</div>`;
+        el.className = `job-item ${job.job_id === currentJobId ? 'selected' : ''}`;
+        el.innerHTML = `
+          <div class="job-header">
+            <strong>${cap(job.job_type || job.type)}</strong>
+            <span class="pill ${statusClass(job.status)}">${job.status || 'unknown'}</span>
+          </div>
+          <div class="small">${job.job_id}</div>
+          <div class="small">Target: ${job.target_worker || 'pending'}${job.worker_name ? ' | Worker: ' + job.worker_name : ''}</div>
+          <div class="small">Policy: ${job.policy || 'unknown'}${job.result_summary ? ' | ' + job.result_summary : ''}</div>
+        `;
         el.addEventListener('click', async () => {
-          jobIdInput.value = job.id;
-          await fetchStatus();
-          await fetchResult();
+          currentJobId = job.job_id;
+          jobIdInput.value = job.job_id;
+          renderTrackedJobs();
+          await loadJob(job.job_id);
         });
         jobsList.appendChild(el);
       });
@@ -221,14 +328,69 @@
       });
     }
 
+    function renderJobOverview(status, resultPayload) {
+      const result = resultPayload?.result || {};
+      const metrics = resultPayload?.metrics || {};
+      jobOverview.innerHTML = `
+        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(status.status)}">${status.status || 'unknown'}</div><div class="small">Submitted: ${status.submitted_at || 'n/a'}</div></div>
+        <div class="detail"><h4>Routing</h4><div class="small">Target worker: ${status.target_worker || 'pending'}</div><div class="small">Actual worker: ${status.worker_name || 'pending'}</div><div class="small">Policy: ${(trackedJobs.find(job => job.job_id === status.job_id) || {}).policy || 'unknown'}</div></div>
+        <div class="detail"><h4>Timing</h4><div class="small">Wait: ${metrics.wait_time ?? 'n/a'}</div><div class="small">Service: ${metrics.service_time ?? 'n/a'}</div><div class="small">Total: ${metrics.total_time ?? 'n/a'}</div></div>
+        <div class="detail"><h4>Result</h4><div class="small">${resultPayload?.result_summary || status.error || 'No result yet'}</div></div>
+      `;
+    }
+
     async function checkHealth() {
       try {
         const res = await fetch('/healthz');
-        await res.json();
+        const data = await res.json();
         healthPill.textContent = res.ok ? 'API and storage online' : 'API issue';
-        healthPill.className = `pill ${res.ok ? 'ok' : ''}`;
+        healthPill.className = `pill ${res.ok ? 'ok' : 'bad'}`;
+        policyPill.textContent = `Policy: ${data.routing_policy || 'unknown'}`;
       } catch {
         healthPill.textContent = 'API unreachable';
+        healthPill.className = 'pill bad';
+      }
+    }
+
+    async function fetchClusterStatus() {
+      const res = await fetch('/cluster/status');
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      currentClusterStatus = data;
+      policyPill.textContent = `Policy: ${data.routing_policy}`;
+      routingPolicySelect.innerHTML = '';
+      (data.supported_routing_policies || []).forEach(policy => {
+        const option = document.createElement('option');
+        option.value = policy;
+        option.textContent = policy;
+        if (policy === data.routing_policy) option.selected = true;
+        routingPolicySelect.appendChild(option);
+      });
+      trackedJobs = data.recent_jobs || trackedJobs;
+      renderClusterMetrics(data);
+      renderWorkers(data);
+      renderTrackedJobs();
+    }
+
+    async function applyRoutingPolicy() {
+      const policy = routingPolicySelect.value;
+      applyPolicyBtn.disabled = true;
+      applyPolicyBtn.textContent = 'Applying...';
+      try {
+        const res = await fetch('/routing-policy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ policy })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(pretty(data));
+        policyPill.textContent = `Policy: ${data.policy}`;
+        await fetchClusterStatus();
+      } catch (err) {
+        alert(String(err));
+      } finally {
+        applyPolicyBtn.disabled = false;
+        applyPolicyBtn.textContent = 'Apply policy';
       }
     }
 
@@ -271,15 +433,10 @@
 
         const data = await response.json();
         if (!response.ok) throw new Error(pretty(data));
+        currentJobId = data.job_id;
         jobIdInput.value = data.job_id;
-        trackedJobs.unshift({ id: data.job_id, type: jobType.value, status: data.status || 'dispatched', worker: '' });
-        renderTrackedJobs();
-        statusOutput.textContent = pretty(data);
-        resultOutput.textContent = 'Waiting for result...';
-        artifactLinks.innerHTML = '';
-        jobSummary.textContent = `Job ${data.job_id} submitted.`;
-        renderLifecycle(data.status || 'dispatched');
-        await fetchStatus();
+        await fetchClusterStatus();
+        await loadJob(data.job_id);
         startPolling();
       } catch (err) {
         statusOutput.textContent = String(err);
@@ -289,49 +446,63 @@
       }
     }
 
-    async function fetchStatus() {
-      const jobId = jobIdInput.value.trim();
-      if (!jobId) return;
-      try {
-        const res = await fetch(`/jobs/${jobId}`);
-        const data = await res.json();
-        statusOutput.textContent = pretty(data);
-        if (!res.ok) throw new Error(pretty(data));
-        const tracked = trackedJobs.find(job => job.id === jobId);
-        if (tracked) {
-          tracked.status = data.status || 'unknown';
-          tracked.worker = data.worker_name || data.target_worker || '';
-          renderTrackedJobs();
-        }
-        jobSummary.textContent = `Status: ${data.status} | Worker: ${data.worker_name || 'pending'} | Target: ${data.target_worker || 'pending'}`;
-        renderLifecycle(data.status || 'unknown');
-        if (data.status === 'completed' || data.status === 'failed') {
-          stopPolling();
-          await fetchResult();
-        }
-      } catch (err) {
-        statusOutput.textContent = String(err);
-      }
+    async function fetchStatus(jobId) {
+      const res = await fetch(`/jobs/${jobId}`);
+      const data = await res.json();
+      statusOutput.textContent = pretty(data);
+      if (!res.ok) throw new Error(pretty(data));
+      return data;
     }
 
-    async function fetchResult() {
-      const jobId = jobIdInput.value.trim();
-      if (!jobId) return;
-      try {
-        const res = await fetch(`/jobs/${jobId}/result`);
-        const data = await res.json();
+    async function fetchResult(jobId) {
+      const res = await fetch(`/jobs/${jobId}/result`);
+      const data = await res.json();
+      if (!res.ok) {
         resultOutput.textContent = pretty(data);
-        renderArtifacts(data);
-      } catch (err) {
-        resultOutput.textContent = String(err);
         artifactLinks.innerHTML = '';
+        return null;
+      }
+      resultOutput.textContent = pretty(data);
+      renderArtifacts(data);
+      return data;
+    }
+
+    async function loadJob(jobId) {
+      currentJobId = jobId;
+      jobIdInput.value = jobId;
+      try {
+        const status = await fetchStatus(jobId);
+        const result = (status.status === 'completed' || status.status === 'failed') ? await fetchResult(jobId) : null;
+        renderLifecycle(status.status || 'unknown');
+        jobSummary.textContent = `${cap(status.job_type)} job ${jobId} is ${status.status}. Target: ${status.target_worker || 'pending'}${status.worker_name ? ' | Worker: ' + status.worker_name : ''}`;
+        renderJobOverview(status, result);
+        await fetchClusterStatus();
+      } catch (err) {
+        statusOutput.textContent = String(err);
       }
     }
 
     function startPolling() {
       stopPolling();
       if (!autoRefresh.checked) return;
-      pollTimer = setInterval(fetchStatus, 2000);
+      pollTimer = setInterval(async () => {
+        try {
+          await fetchClusterStatus();
+          if (currentJobId) {
+            const status = await fetchStatus(currentJobId);
+            if (status.status === 'completed' || status.status === 'failed') {
+              await fetchResult(currentJobId);
+              renderJobOverview(status, await fetch(`/jobs/${currentJobId}/result`).then(r => r.ok ? r.json() : null));
+              stopPolling();
+            } else {
+              renderLifecycle(status.status || 'unknown');
+              renderJobOverview(status, null);
+            }
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 3000);
     }
 
     function stopPolling() {
@@ -341,14 +512,14 @@
 
     jobType.addEventListener('change', setVisibleFields);
     submitBtn.addEventListener('click', submitJob);
-    statusBtn.addEventListener('click', fetchStatus);
-    resultBtn.addEventListener('click', fetchResult);
+    loadJobBtn.addEventListener('click', () => jobIdInput.value.trim() && loadJob(jobIdInput.value.trim()));
+    applyPolicyBtn.addEventListener('click', applyRoutingPolicy);
     autoRefresh.addEventListener('change', () => autoRefresh.checked ? startPolling() : stopPolling());
 
     setVisibleFields();
     checkHealth();
-    renderTrackedJobs();
-    renderLifecycle('submitted');
+    fetchClusterStatus();
+    startPolling();
   </script>
 </body>
 </html>
