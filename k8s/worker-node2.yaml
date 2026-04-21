@@ -16,7 +16,7 @@ spec:
         kubernetes.io/hostname: node2-worker
       containers:
         - name: worker
-          image: williamsdock/mini-dc-worker:v10
+          image: williamsdock/mini-dc-worker:v13
           env:
             - name: REDIS_HOST
               value: "redis"
@@ -36,6 +36,22 @@ spec:
               value: "/data/job_results.csv"
             - name: METRICS_PORT
               value: "8002"
+            - name: MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: "mini-dc-artifacts"
+            - name: MINIO_SECURE
+              value: "false"
           ports:
             - name: metrics
               containerPort: 8002
@@ -43,14 +59,8 @@ spec:
           volumeMounts:
             - name: job-logs
               mountPath: /data
-            - name: shared-api-data
-              mountPath: /shared-api-data
       volumes:
         - name: job-logs
           hostPath:
             path: /tmp/mini-dc-logs
-            type: DirectoryOrCreate
-        - name: shared-api-data
-          hostPath:
-            path: /tmp/mini-dc-api
             type: DirectoryOrCreate

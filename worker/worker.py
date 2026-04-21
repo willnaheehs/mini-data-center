@@ -12,6 +12,13 @@ from pathlib import Path
 import redis
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
+CURRENT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = CURRENT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.append(str(REPO_ROOT))
+
+from common.storage import artifact_url, download_bytes, upload_bytes
+
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
 QUEUE_NAME = os.getenv("QUEUE_NAME", "jobs")
@@ -255,6 +262,7 @@ def build_result_payload(job: dict, row: dict, extra_result: dict | None = None)
             "total_time": row["total_time"],
         },
         "metadata": job.get("metadata", {}),
+        "artifacts": job.get("artifacts", {}),
     }
 
 
@@ -316,9 +324,9 @@ def validate_job(job: dict):
         if operation != "linear_binary_classify":
             raise ValueError("ml jobs currently support only linear_binary_classify")
     elif job["job_type"] == "python_script":
-        script_path = job["params"].get("script_path")
-        if not script_path:
-            raise ValueError("python_script job requires script_path")
+        script_artifact = job["params"].get("script_artifact")
+        if not script_artifact or not script_artifact.get("object_key"):
+            raise ValueError("python_script job requires script_artifact.object_key")
     else:
         raise ValueError(f"unsupported job_type: {job['job_type']}")
 
@@ -442,19 +450,68 @@ def process_ml_job(job: dict):
     )
 
 
+def stage_input_artifacts(workdir: str, input_artifacts: list[dict]) -> list[dict]:
+    staged = []
+    input_dir = Path(workdir) / "inputs"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    for artifact in input_artifacts:
+        object_key = artifact.get("object_key")
+        if not object_key:
+            continue
+        file_name = artifact.get("name") or Path(object_key).name
+        local_path = input_dir / file_name
+        local_path.write_bytes(download_bytes(object_key))
+        staged.append({
+            **artifact,
+            "local_path": str(local_path),
+        })
+    return staged
+
+
+def collect_output_artifacts(job: dict, workdir: str, script_name: str) -> list[dict]:
+    outputs = []
+    for root, _, files in os.walk(workdir):
+        for file_name in files:
+            local_path = Path(root) / file_name
+            if local_path.name == script_name:
+                continue
+            if local_path.parent.name == "inputs":
+                continue
+            relative_name = local_path.relative_to(workdir).as_posix()
+            object_key = f"jobs/{job['job_id']}/outputs/{relative_name}"
+            artifact = upload_bytes(object_key, local_path.read_bytes())
+            artifact.update({
+                "name": relative_name,
+                "category": "output",
+                "url": artifact_url(object_key),
+            })
+            outputs.append(artifact)
+    return outputs
+
+
 def process_python_script_job(job: dict):
     params = job["params"]
-    script_path = Path(params["script_path"])
+    script_artifact = params["script_artifact"]
+    script_name = params.get("script_name") or Path(script_artifact["object_key"]).name
     timeout_seconds = int(params.get("timeout_seconds", 30))
     started_at = datetime.now(timezone.utc)
 
-    if not script_path.exists():
-        raise FileNotFoundError(f"script not found: {script_path}")
-
+    script_bytes = download_bytes(script_artifact["object_key"])
     os.makedirs(SCRIPT_WORKDIR_ROOT, exist_ok=True)
+
     with tempfile.TemporaryDirectory(prefix=f"{job['job_id']}-", dir=SCRIPT_WORKDIR_ROOT) as workdir:
-        copied_script = Path(workdir) / script_path.name
-        copied_script.write_bytes(script_path.read_bytes())
+        staged_inputs = stage_input_artifacts(workdir, params.get("input_artifacts", []))
+        copied_script = Path(workdir) / Path(script_name).name
+        copied_script.write_bytes(script_bytes)
+
+        env = os.environ.copy()
+        env["MINI_DC_JOB_ID"] = job["job_id"]
+        env["MINI_DC_WORKER_NAME"] = WORKER_NAME
+        env["MINI_DC_INPUT_DIR"] = str(Path(workdir) / "inputs")
+        env["MINI_DC_OUTPUT_DIR"] = str(Path(workdir) / "outputs")
+        env["MINI_DC_INPUT_FILES_JSON"] = json.dumps(staged_inputs)
+        Path(env["MINI_DC_OUTPUT_DIR"]).mkdir(parents=True, exist_ok=True)
 
         completed = subprocess.run(
             [sys.executable, str(copied_script)],
@@ -462,11 +519,17 @@ def process_python_script_job(job: dict):
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            env=env,
         )
 
         stdout_text = completed.stdout[-12000:]
         stderr_text = completed.stderr[-12000:]
         exit_code = completed.returncode
+        output_artifacts = collect_output_artifacts(job, workdir, copied_script.name)
+        job.setdefault("artifacts", {}).setdefault("inputs", [])
+        job.setdefault("artifacts", {}).setdefault("outputs", [])
+        job["artifacts"]["outputs"] = output_artifacts
+
         status = "completed" if exit_code == 0 else "failed"
         summary = f"python script exited with code {exit_code}"
         finished_at = datetime.now(timezone.utc)
@@ -477,10 +540,12 @@ def process_python_script_job(job: dict):
             job,
             row,
             extra_result={
-                "script_name": params.get("script_name", script_path.name),
+                "script_name": script_name,
                 "exit_code": exit_code,
                 "stdout": stdout_text,
                 "stderr": stderr_text,
+                "input_artifacts": staged_inputs,
+                "output_artifacts": output_artifacts,
             },
             error=None if exit_code == 0 else stderr_text or f"script exited with code {exit_code}",
         )

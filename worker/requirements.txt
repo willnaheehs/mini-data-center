@@ -1,2 +1,3 @@
 redis==5.0.1
 prometheus-client==0.20.0
+minio==7.2.7

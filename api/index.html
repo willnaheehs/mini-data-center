@@ -43,6 +43,8 @@
     .step.active { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
     .step.done { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
     .step.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
+    .artifact-list { display: grid; gap: 8px; margin-top: 12px; }
+    .artifact-link { color: #a5d8ff; text-decoration: none; }
   </style>
 </head>
 <body>
@@ -50,7 +52,7 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
-        <p>Submit your own jobs, route them across workers, and watch the lifecycle clearly.</p>
+        <p>Upload scripts and data, route them to any worker, and fetch outputs from shared artifact storage.</p>
       </div>
       <span id="health-pill" class="pill">Checking API...</span>
     </div>
@@ -68,6 +70,8 @@
         <div id="python-fields">
           <label for="python-file">Python script (.py)</label>
           <input id="python-file" type="file" accept=".py" />
+          <label for="python-input-files">Optional input files</label>
+          <input id="python-input-files" type="file" multiple />
           <label for="python-timeout">Timeout seconds</label>
           <input id="python-timeout" type="number" min="1" max="300" value="30" />
         </div>
@@ -96,7 +100,7 @@
         </div>
 
         <button id="submit-btn">Submit job</button>
-        <p class="small">Custom Python scripts are uploaded, queued, executed on a worker, and their output is returned.</p>
+        <p class="small">Python jobs now use shared artifact storage, so uploaded scripts and input files can be executed on any worker.</p>
       </section>
 
       <section class="card">
@@ -122,6 +126,7 @@
       <section class="card">
         <h3>Result</h3>
         <pre id="result-output">Waiting for result...</pre>
+        <div id="artifact-links" class="artifact-list"></div>
       </section>
     </div>
   </div>
@@ -137,6 +142,7 @@
     const jobIdInput = document.getElementById('job-id');
     const statusOutput = document.getElementById('status-output');
     const resultOutput = document.getElementById('result-output');
+    const artifactLinks = document.getElementById('artifact-links');
     const healthPill = document.getElementById('health-pill');
     const jobsList = document.getElementById('jobs-list');
     const autoRefresh = document.getElementById('auto-refresh');
@@ -200,11 +206,26 @@
       }
     }
 
+    function renderArtifacts(resultPayload) {
+      artifactLinks.innerHTML = '';
+      const result = resultPayload?.result || {};
+      const outputs = result.output_artifacts || resultPayload?.artifacts?.outputs || [];
+      if (!outputs.length) return;
+      outputs.forEach(artifact => {
+        const link = document.createElement('a');
+        link.className = 'artifact-link';
+        link.href = artifact.url || `/artifacts/${artifact.object_key}`;
+        link.textContent = `Download ${artifact.name || artifact.object_key}`;
+        link.target = '_blank';
+        artifactLinks.appendChild(link);
+      });
+    }
+
     async function checkHealth() {
       try {
         const res = await fetch('/healthz');
-        const data = await res.json();
-        healthPill.textContent = res.ok ? 'API online' : 'API issue';
+        await res.json();
+        healthPill.textContent = res.ok ? 'API and storage online' : 'API issue';
         healthPill.className = `pill ${res.ok ? 'ok' : ''}`;
       } catch {
         healthPill.textContent = 'API unreachable';
@@ -218,10 +239,12 @@
         let response;
         if (jobType.value === 'python_script') {
           const fileInput = document.getElementById('python-file');
+          const inputFiles = document.getElementById('python-input-files');
           if (!fileInput.files.length) throw new Error('Choose a Python file first');
           const form = new FormData();
           form.append('script', fileInput.files[0]);
           form.append('timeout_seconds', document.getElementById('python-timeout').value);
+          [...inputFiles.files].forEach(file => form.append('input_files', file));
           response = await fetch('/jobs/python', { method: 'POST', body: form });
         } else if (jobType.value === 'compute') {
           response = await fetch('/jobs', {
@@ -253,6 +276,7 @@
         renderTrackedJobs();
         statusOutput.textContent = pretty(data);
         resultOutput.textContent = 'Waiting for result...';
+        artifactLinks.innerHTML = '';
         jobSummary.textContent = `Job ${data.job_id} submitted.`;
         renderLifecycle(data.status || 'dispatched');
         await fetchStatus();
@@ -297,8 +321,10 @@
         const res = await fetch(`/jobs/${jobId}/result`);
         const data = await res.json();
         resultOutput.textContent = pretty(data);
+        renderArtifacts(data);
       } catch (err) {
         resultOutput.textContent = String(err);
+        artifactLinks.innerHTML = '';
       }
     }
 

@@ -1,14 +1,24 @@
 import json
+import mimetypes
 import os
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import redis
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+CURRENT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = CURRENT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.append(str(REPO_ROOT))
+
+from common.storage import artifact_url, download_bytes, ensure_bucket_exists, upload_bytes
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
@@ -33,9 +43,11 @@ JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", str(7 * 24 * 60 * 60)))
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/data/uploads")
 SCRIPT_MAX_BYTES = int(os.getenv("SCRIPT_MAX_BYTES", str(256 * 1024)))
 RESULT_BASE_URL = os.getenv("RESULT_BASE_URL", "")
+MAX_INPUT_FILES = int(os.getenv("MAX_INPUT_FILES", "8"))
+MAX_INPUT_FILE_BYTES = int(os.getenv("MAX_INPUT_FILE_BYTES", str(5 * 1024 * 1024)))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-app = FastAPI(title="mini-data-center api", version="0.1.0")
+app = FastAPI(title="mini-data-center api", version="0.2.0")
 
 
 class ComputeParams(BaseModel):
@@ -103,6 +115,7 @@ def payload_key(job_id: str) -> str:
 
 def ensure_upload_dir() -> None:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+    ensure_bucket_exists()
 
 
 def redis_set_json(key: str, payload: dict) -> None:
@@ -207,6 +220,7 @@ def normalize_job(request: JobCreateRequest) -> dict:
         "target_queue": target["queue_name"],
         "client_id": request.client_id,
         "metadata": request.metadata,
+        "artifacts": {"inputs": [], "outputs": []},
         "status": "dispatched",
         "dispatcher_decision": {
             "policy": ROUTING_POLICY,
@@ -243,6 +257,33 @@ def store_initial_job_state(job: dict) -> None:
     r.zadd(JOB_INDEX_KEY, {job_id: time.time()})
 
 
+def build_object_key(job_id: str, category: str, file_name: str) -> str:
+    safe_name = os.path.basename(file_name) or f"{category}.bin"
+    return f"jobs/{job_id}/{category}/{uuid.uuid4()}-{safe_name}"
+
+
+def guess_content_type(file_name: str) -> str:
+    guessed, _ = mimetypes.guess_type(file_name)
+    return guessed or "application/octet-stream"
+
+
+async def persist_upload(job_id: str, upload: UploadFile, category: str, max_bytes: int) -> dict:
+    data = await upload.read()
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=400, detail=f"{category} exceeds {max_bytes} bytes limit")
+
+    object_key = build_object_key(job_id, category, upload.filename or f"{category}.bin")
+    artifact = upload_bytes(object_key, data, content_type=guess_content_type(upload.filename or object_key))
+    artifact.update(
+        {
+            "name": upload.filename or Path(object_key).name,
+            "category": category,
+            "url": artifact_url(object_key),
+        }
+    )
+    return artifact
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
@@ -252,8 +293,9 @@ def index() -> FileResponse:
 def healthz() -> dict:
     try:
         r.ping()
+        ensure_bucket_exists()
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"redis unavailable: {exc}") from exc
+        raise HTTPException(status_code=503, detail=f"dependency unavailable: {exc}") from exc
     return {"status": "ok"}
 
 
@@ -272,29 +314,29 @@ async def create_python_job(
     metadata_json: str = Form("{}"),
     timeout_seconds: int = Form(30),
     script: UploadFile = File(...),
+    input_files: list[UploadFile] | None = File(None),
 ) -> JobCreateResponse:
     ensure_upload_dir()
 
     if not (script.filename or "").endswith(".py"):
         raise HTTPException(status_code=400, detail="only .py files are supported")
 
-    content = await script.read()
-    if len(content) > SCRIPT_MAX_BYTES:
-        raise HTTPException(status_code=400, detail=f"script exceeds {SCRIPT_MAX_BYTES} bytes limit")
-
-    safe_name = f"{uuid.uuid4()}-{os.path.basename(script.filename or 'job.py')}"
-    destination = os.path.join(UPLOAD_DIR, safe_name)
-    with open(destination, "wb") as f:
-        f.write(content)
-
     try:
         metadata = json.loads(metadata_json)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="metadata_json must be valid JSON") from exc
 
-    target = choose_target()
-    submitted_at = utc_now()
     job_id = str(uuid.uuid4())
+    submitted_at = utc_now()
+    script_artifact = await persist_upload(job_id, script, "script", SCRIPT_MAX_BYTES)
+
+    uploaded_inputs = []
+    for upload in input_files or []:
+        if len(uploaded_inputs) >= MAX_INPUT_FILES:
+            raise HTTPException(status_code=400, detail=f"too many input files, max {MAX_INPUT_FILES}")
+        uploaded_inputs.append(await persist_upload(job_id, upload, "input", MAX_INPUT_FILE_BYTES))
+
+    target = choose_target()
     job = {
         "job_id": job_id,
         "job_type": "python_script",
@@ -303,8 +345,9 @@ async def create_python_job(
         "submitted_at": submitted_at,
         "dispatched_at": utc_now(),
         "params": {
-            "script_name": script.filename or safe_name,
-            "script_path": destination,
+            "script_name": script.filename or script_artifact["name"],
+            "script_artifact": script_artifact,
+            "input_artifacts": uploaded_inputs,
             "timeout_seconds": max(1, min(timeout_seconds, 300)),
         },
         "policy": ROUTING_POLICY,
@@ -312,6 +355,10 @@ async def create_python_job(
         "target_queue": target["queue_name"],
         "client_id": client_id,
         "metadata": metadata,
+        "artifacts": {
+            "inputs": [script_artifact, *uploaded_inputs],
+            "outputs": [],
+        },
         "status": "dispatched",
         "dispatcher_decision": {
             "policy": ROUTING_POLICY,
@@ -351,3 +398,16 @@ def get_job_result(job_id: str) -> dict:
             raise HTTPException(status_code=409, detail=f"job is {status_doc.get('status', 'unknown')}")
         raise HTTPException(status_code=404, detail="job result not found")
     return result_doc
+
+
+@app.get("/artifacts/{artifact_path:path}")
+def get_artifact(artifact_path: str):
+    try:
+        data = download_bytes(artifact_path)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"artifact not found: {artifact_path}") from exc
+
+    file_name = Path(artifact_path).name
+    media_type = guess_content_type(file_name)
+    headers = {"Content-Disposition": f'attachment; filename="{file_name}"'}
+    return StreamingResponse(iter([data]), media_type=media_type, headers=headers)

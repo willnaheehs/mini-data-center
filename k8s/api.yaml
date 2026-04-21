@@ -16,7 +16,7 @@ spec:
         kubernetes.io/hostname: node1-control
       containers:
         - name: api
-          image: williamsdock/mini-dc-api:v1
+          image: williamsdock/mini-dc-api:v5
           env:
             - name: REDIS_HOST
               value: "redis"
@@ -44,8 +44,22 @@ spec:
               value: "604800"
             - name: UPLOAD_DIR
               value: "/data/uploads"
-            - name: WORKER_SHARED_UPLOAD_DIR
-              value: "/shared-api-data/uploads"
+            - name: MINIO_ENDPOINT
+              value: "minio:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_BUCKET
+              value: "mini-dc-artifacts"
+            - name: MINIO_SECURE
+              value: "false"
           ports:
             - name: http
               containerPort: 8000
@@ -53,8 +67,6 @@ spec:
           volumeMounts:
             - name: api-data
               mountPath: /data
-            - name: api-data
-              mountPath: /shared-api-data
       volumes:
         - name: api-data
           hostPath:
