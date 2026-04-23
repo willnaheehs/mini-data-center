@@ -350,6 +350,12 @@ def validate_job(job: dict):
         script_artifact = job["params"].get("script_artifact")
         if not script_artifact or not script_artifact.get("object_key"):
             raise ValueError("python_script job requires script_artifact.object_key")
+    elif job["job_type"] == "file_process":
+        input_artifact = job["params"].get("input_artifact")
+        if not input_artifact or not input_artifact.get("object_key"):
+            raise ValueError("file_process job requires input_artifact.object_key")
+        if job["params"].get("operation") != "text_summary":
+            raise ValueError("file_process currently supports only text_summary")
     else:
         raise ValueError(f"unsupported job_type: {job['job_type']}")
 
@@ -513,6 +519,64 @@ def collect_output_artifacts(job: dict, workdir: str, script_name: str) -> list[
     return outputs
 
 
+def process_file_job(job: dict):
+    params = job["params"]
+    input_artifact = params["input_artifact"]
+    operation = params.get("operation", "text_summary")
+    started_at = datetime.now(timezone.utc)
+
+    input_name = input_artifact.get("name") or Path(input_artifact["object_key"]).name
+    input_bytes = download_bytes(input_artifact["object_key"])
+    text = input_bytes.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    words = text.split()
+
+    word_counts = {}
+    for word in words:
+        cleaned = word.strip(".,!?;:\"'()[]{}<>").lower()
+        if not cleaned:
+            continue
+        word_counts[cleaned] = word_counts.get(cleaned, 0) + 1
+
+    top_words = sorted(word_counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    summary_payload = {
+        "operation": operation,
+        "file_name": input_name,
+        "bytes": len(input_bytes),
+        "line_count": len(lines),
+        "word_count": len(words),
+        "character_count": len(text),
+        "top_words": [{"word": word, "count": count} for word, count in top_words],
+        "preview": text[:500],
+    }
+
+    summary_bytes = json.dumps(summary_payload, indent=2).encode("utf-8")
+    object_key = f"jobs/{job['job_id']}/outputs/text-summary.json"
+    output_artifact = upload_bytes(object_key, summary_bytes, content_type="application/json")
+    output_artifact.update({
+        "name": "text-summary.json",
+        "category": "output",
+        "url": artifact_url(object_key),
+    })
+    job.setdefault("artifacts", {}).setdefault("outputs", [])
+    job["artifacts"]["outputs"] = [output_artifact]
+
+    finished_at = datetime.now(timezone.utc)
+    summary = f"summarized text file {input_name} ({len(lines)} lines, {len(words)} words)"
+    row = build_result_row(job, started_at, finished_at, "completed", summary)
+    append_result_row(row)
+    observe_result_metrics(job, row)
+    persist_job_status(
+        job,
+        row,
+        extra_result={
+            **summary_payload,
+            "input_artifact": input_artifact,
+            "output_artifacts": [output_artifact],
+        },
+    )
+
+
 def process_python_script_job(job: dict):
     params = job["params"]
     script_artifact = params["script_artifact"]
@@ -601,6 +665,8 @@ def main():
                 process_compute_job(job)
             elif job["job_type"] == "ml":
                 process_ml_job(job)
+            elif job["job_type"] == "file_process":
+                process_file_job(job)
             elif job["job_type"] == "python_script":
                 process_python_script_job(job)
         except subprocess.TimeoutExpired:

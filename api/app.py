@@ -48,6 +48,7 @@ SCRIPT_MAX_BYTES = int(os.getenv("SCRIPT_MAX_BYTES", str(256 * 1024)))
 RESULT_BASE_URL = os.getenv("RESULT_BASE_URL", "")
 MAX_INPUT_FILES = int(os.getenv("MAX_INPUT_FILES", "8"))
 MAX_INPUT_FILE_BYTES = int(os.getenv("MAX_INPUT_FILE_BYTES", str(5 * 1024 * 1024)))
+FILE_PROCESS_MAX_BYTES = int(os.getenv("FILE_PROCESS_MAX_BYTES", str(5 * 1024 * 1024)))
 RECENT_JOBS_LIMIT = int(os.getenv("RECENT_JOBS_LIMIT", "20"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -67,8 +68,13 @@ class MlParams(BaseModel):
     threshold: float = 0.5
 
 
+class FileProcessParams(BaseModel):
+    operation: Literal["text_summary"] = "text_summary"
+    input_artifact: Dict[str, Any]
+
+
 class JobCreateRequest(BaseModel):
-    type: Literal["compute", "ml"]
+    type: Literal["compute", "ml", "file_process"]
     params: Dict[str, Any]
     client_id: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -253,6 +259,12 @@ def normalize_job(request: JobCreateRequest) -> dict:
             "job_type": "ml",
             "params": parsed.model_dump(),
         }
+    elif request.type == "file_process":
+        parsed = FileProcessParams.model_validate(request.params)
+        worker_job = {
+            "job_type": "file_process",
+            "params": parsed.model_dump(),
+        }
     else:
         raise HTTPException(status_code=400, detail=f"unsupported job type: {request.type}")
 
@@ -416,6 +428,71 @@ def create_job(request: JobCreateRequest) -> JobCreateResponse:
     r.lpush(job["target_queue"], json.dumps(job))
     status_url, result_url = build_status_urls(job["job_id"])
     return JobCreateResponse(job_id=job["job_id"], status=job["status"], status_url=status_url, result_url=result_url)
+
+
+@app.post("/jobs/file", response_model=JobCreateResponse)
+async def create_file_job(
+    client_id: Optional[str] = Form(None),
+    metadata_json: str = Form("{}"),
+    operation: str = Form("text_summary"),
+    input_file: UploadFile = File(...),
+) -> JobCreateResponse:
+    ensure_upload_dir()
+
+    try:
+        metadata = json.loads(metadata_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="metadata_json must be valid JSON") from exc
+
+    if operation != "text_summary":
+        raise HTTPException(status_code=400, detail=f"unsupported file operation: {operation}")
+
+    job_id = str(uuid.uuid4())
+    submitted_at = utc_now()
+    input_artifact = await persist_upload(job_id, input_file, "input", FILE_PROCESS_MAX_BYTES)
+
+    target = choose_target()
+    policy = target.get("policy", get_current_routing_policy())
+    cluster_snapshot = get_cluster_snapshot()
+    job = {
+        "job_id": job_id,
+        "job_type": "file_process",
+        "api_job_type": "file_process",
+        "submit_time": submitted_at,
+        "submitted_at": submitted_at,
+        "dispatched_at": utc_now(),
+        "params": {
+            "operation": operation,
+            "input_artifact": input_artifact,
+        },
+        "policy": policy,
+        "target_worker": target["worker_name"],
+        "target_queue": target["queue_name"],
+        "client_id": client_id,
+        "metadata": metadata,
+        "artifacts": {
+            "inputs": [input_artifact],
+            "outputs": [],
+        },
+        "status": "dispatched",
+        "dispatcher_decision": {
+            "policy": policy,
+            "selection_reason": "api submission",
+            "load_snapshot": {
+                item["worker_name"]: {
+                    "queue_name": item["queue_name"],
+                    "queue_length": item["queue_length"],
+                    "busy_value": item["busy_value"],
+                    "estimated_load": item["estimated_load"],
+                }
+                for item in cluster_snapshot["workers"]
+            },
+        },
+    }
+    store_initial_job_state(job)
+    r.lpush(job["target_queue"], json.dumps(job))
+    status_url, result_url = build_status_urls(job_id)
+    return JobCreateResponse(job_id=job_id, status="dispatched", status_url=status_url, result_url=result_url)
 
 
 @app.post("/jobs/python", response_model=JobCreateResponse)

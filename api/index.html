@@ -114,6 +114,7 @@
         <label for="job-type">Job type</label>
         <select id="job-type">
           <option value="python_script">Custom Python script</option>
+          <option value="file_process">File processing</option>
           <option value="compute">Built-in compute</option>
           <option value="ml">ML inference</option>
         </select>
@@ -125,6 +126,16 @@
           <input id="python-input-files" type="file" multiple />
           <label for="python-timeout">Timeout seconds</label>
           <input id="python-timeout" type="number" min="1" max="300" value="30" />
+        </div>
+
+        <div id="file-fields" style="display:none;">
+          <label for="file-operation">File operation</label>
+          <select id="file-operation">
+            <option value="text_summary">Text summary</option>
+          </select>
+          <label for="file-input">Input file</label>
+          <input id="file-input" type="file" accept=".txt,.csv,.log,.md,.json,.py,.yaml,.yml,.xml,.html,.js,.ts,.tsx,.css" />
+          <div class="small">Best for text-like files such as TXT, CSV, logs, JSON, and source files.</div>
         </div>
 
         <div id="compute-fields" style="display:none;">
@@ -201,6 +212,7 @@
   <script>
     const jobType = document.getElementById('job-type');
     const pythonFields = document.getElementById('python-fields');
+    const fileFields = document.getElementById('file-fields');
     const computeFields = document.getElementById('compute-fields');
     const mlFields = document.getElementById('ml-fields');
     const submitBtn = document.getElementById('submit-btn');
@@ -237,6 +249,7 @@
 
     function setVisibleFields() {
       pythonFields.style.display = jobType.value === 'python_script' ? 'block' : 'none';
+      fileFields.style.display = jobType.value === 'file_process' ? 'block' : 'none';
       computeFields.style.display = jobType.value === 'compute' ? 'block' : 'none';
       mlFields.style.display = jobType.value === 'ml' ? 'block' : 'none';
     }
@@ -421,6 +434,14 @@
       if (status.job_type === 'python_script') {
         return `${result.script_name || 'Script'} exited with code ${safe(result.exit_code, 'unknown')} and produced ${(result.output_artifacts || []).length} output artifact(s).`;
       }
+      if (status.job_type === 'file_process') {
+        const topWords = (result.top_words || []).slice(0, 3).map(item => `${item.word} (${item.count})`).join(', ');
+        const preview = safe(result.preview, '').replace(/\s+/g, ' ').trim();
+        let message = `Processed ${result.file_name || 'file'}: ${safe(result.line_count, 0)} lines, ${safe(result.word_count, 0)} words, ${safe(result.bytes, 0)} bytes.`;
+        if (topWords) message += ` Top words: ${topWords}.`;
+        if (preview) message += ` Preview: "${preview.slice(0, 140)}${preview.length > 140 ? '…' : ''}"`;
+        return message;
+      }
       return resultPayload.result_summary || 'Job completed.';
     }
 
@@ -506,6 +527,13 @@
           form.append('timeout_seconds', document.getElementById('python-timeout').value);
           [...inputFiles.files].forEach(file => form.append('input_files', file));
           response = await fetch('/jobs/python', { method: 'POST', body: form });
+        } else if (jobType.value === 'file_process') {
+          const fileInput = document.getElementById('file-input');
+          if (!fileInput.files.length) throw new Error('Choose a file first');
+          const form = new FormData();
+          form.append('operation', document.getElementById('file-operation').value);
+          form.append('input_file', fileInput.files[0]);
+          response = await fetch('/jobs/file', { method: 'POST', body: form });
         } else if (jobType.value === 'compute') {
           response = await fetch('/jobs', {
             method: 'POST',
