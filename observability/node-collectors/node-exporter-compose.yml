@@ -9,5 +9,8 @@ services:
     pid: host
     command:
       - --path.rootfs=/host
+      - --collector.textfile
+      - --collector.textfile.directory=/host/var/lib/node_exporter/textfile_collector
     volumes:
       - '/:/host:ro,rslave'
+      - '/var/lib/node_exporter/textfile_collector:/host/var/lib/node_exporter/textfile_collector:ro'

@@ -21,6 +21,7 @@ Provide visibility into:
 ### Node collectors (run on each node)
 - Node Exporter
 - Promtail
+- optional custom host metrics via Node Exporter textfile collector
 
 Run the node collectors on:
 - `node1-control`
@@ -35,6 +36,10 @@ Run the node collectors on:
   - `loki/config.yml`
 - `node-collectors/`
   - `node-exporter-compose.yml`
+  - `export-cpu-temp.sh`
+  - `mini-dc-cpu-temp-export.service`
+  - `mini-dc-cpu-temp-export.timer`
+  - `textfile-collector-setup.md`
   - `promtail/config.yml`
 
 ## Notes
@@ -42,6 +47,7 @@ Run the node collectors on:
 - This is intentionally separate from the Kubernetes app manifests so it can merge cleanly later.
 - This first version is host-based via Docker Compose rather than deployed inside Kubernetes.
 - Node Exporter exposes host metrics to Prometheus.
+- Node Exporter textfile collector can expose custom host metrics such as CPU temperature from `lm-sensors`.
 - Promtail ships logs to Loki.
 - Grafana reads from Prometheus and Loki.
 

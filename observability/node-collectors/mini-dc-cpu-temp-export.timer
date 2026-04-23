@@ -1,0 +1,11 @@
+[Unit]
+Description=Run mini data center CPU temperature exporter periodically
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=mini-dc-cpu-temp-export.service
+
+[Install]
+WantedBy=timers.target
