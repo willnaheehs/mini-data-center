@@ -20,6 +20,7 @@ def main() -> None:
     run_root = manifest_file.parent
     results_dir = run_root / "results" / "job-results"
     results_dir.mkdir(parents=True, exist_ok=True)
+    submission_records = manifest.get("submission_records", {})
 
     manifest["run_status"] = "collecting"
     write_json(manifest_file, manifest)
@@ -32,12 +33,26 @@ def main() -> None:
             status = api_request("GET", f"/jobs/{job_id}", api_base=args.api_base)
             statuses[job_id] = status
             if status.get("status") in TERMINAL:
+                observed_completed_perf = time.perf_counter()
+                observed_completed_at = utc_now_iso()
                 result_payload = None
                 try:
                     result_payload = api_request("GET", f"/jobs/{job_id}/result", api_base=args.api_base)
                 except Exception:
                     result_payload = {"job_id": job_id, "status": status.get("status"), "result_missing": True}
-                write_json(results_dir / f"{job_id}.json", {"status": status, "result": result_payload})
+                submission = submission_records.get(job_id, {})
+                runner_observed_total_time = None
+                if submission.get("runner_submitted_perf_counter") is not None:
+                    runner_observed_total_time = observed_completed_perf - float(submission["runner_submitted_perf_counter"])
+                write_json(results_dir / f"{job_id}.json", {
+                    "status": status,
+                    "result": result_payload,
+                    "runner_observation": {
+                        "runner_submitted_at": submission.get("runner_submitted_at"),
+                        "runner_completed_observed_at": observed_completed_at,
+                        "runner_observed_total_time": runner_observed_total_time,
+                    },
+                })
                 finished.append(job_id)
         for job_id in finished:
             remaining.remove(job_id)

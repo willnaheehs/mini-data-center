@@ -21,6 +21,15 @@ def metric_value(metrics: dict, *names: str):
     return None
 
 
+def summarize_series(values: list[float]) -> dict:
+    return {
+        "avg": mean(values),
+        "p95": percentile(values, 0.95),
+        "max": max(values),
+        "min": min(values),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
@@ -32,7 +41,8 @@ def main() -> None:
     metrics_dir = run_root / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
-    totals, waits, services = [], [], []
+    runner_totals = []
+    worker_totals, waits, services = [], [], []
     jobs_per_worker = {}
     completed = failed = 0
     negative_metric_warnings = []
@@ -46,14 +56,21 @@ def main() -> None:
         elif status in {"failed", "deleted"}:
             failed += 1
 
+        runner_observation = payload.get("runner_observation", {})
+        observed_total = runner_observation.get("runner_observed_total_time")
+        if observed_total is not None:
+            runner_totals.append(float(observed_total))
+
         metrics = result.get("metrics", {})
         extracted = {
-            "total_time": metric_value(metrics, "total_time", "total_seconds"),
+            "worker_total_time": metric_value(metrics, "total_time", "total_seconds"),
             "wait_time": metric_value(metrics, "wait_time", "wait_seconds"),
             "service_time": metric_value(metrics, "service_time", "service_seconds"),
         }
 
-        for key, bucket in [("total_time", totals), ("wait_time", waits), ("service_time", services)]:
+        if extracted["service_time"] is not None:
+            services.append(extracted["service_time"])
+        for key, bucket in [("worker_total_time", worker_totals), ("wait_time", waits)]:
             value = extracted[key]
             if value is not None:
                 bucket.append(value)
@@ -73,18 +90,20 @@ def main() -> None:
         "failed_count": failed,
         "jobs_per_worker": jobs_per_worker,
     }
-    for name, values in [("total_time", totals), ("wait_time", waits), ("service_time", services)]:
-        if values:
-            summary[name] = {
-                "avg": mean(values),
-                "p95": percentile(values, 0.95),
-                "max": max(values),
-                "min": min(values),
-            }
+    if runner_totals:
+        summary["runner_observed_total_time"] = summarize_series(runner_totals)
+    if services:
+        summary["service_time"] = summarize_series(services)
+    positive_worker_totals = [v for v in worker_totals if v >= 0]
+    positive_waits = [v for v in waits if v >= 0]
+    if positive_worker_totals:
+        summary["worker_total_time"] = summarize_series(positive_worker_totals)
+    if positive_waits:
+        summary["wait_time"] = summarize_series(positive_waits)
 
     if negative_metric_warnings:
         summary["warnings"] = {
-            "negative_timing_metrics_detected": True,
+            "negative_cross_host_timing_metrics_detected": True,
             "details": negative_metric_warnings,
         }
 
@@ -95,7 +114,7 @@ def main() -> None:
         writer.writerow(["job_count", summary["job_count"]])
         writer.writerow(["completed_count", summary["completed_count"]])
         writer.writerow(["failed_count", summary["failed_count"]])
-        for metric in ["total_time", "wait_time", "service_time"]:
+        for metric in ["runner_observed_total_time", "service_time", "worker_total_time", "wait_time"]:
             if metric in summary:
                 writer.writerow([f"{metric}_avg", summary[metric]["avg"]])
                 writer.writerow([f"{metric}_p95", summary[metric]["p95"]])
