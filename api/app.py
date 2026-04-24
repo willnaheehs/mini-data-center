@@ -638,6 +638,108 @@ def get_job_result(job_id: str) -> dict:
     return result_doc
 
 
+
+
+EXPERIMENTS_ROOT = REPO_ROOT / "experiments" / "runs"
+RUNNER_DIR = REPO_ROOT / "experiments" / "runner"
+
+
+class ExperimentCreateRequest(BaseModel):
+    policy: Literal["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
+    workload_file: str
+    run_id: str
+    notes: str = ""
+
+
+def run_experiment_script(script_name: str, *args: str) -> tuple[int, str, str]:
+    import subprocess
+
+    cmd = [sys.executable, str(RUNNER_DIR / script_name), *args]
+    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def read_experiment_manifest(run_id: str) -> dict:
+    manifest = EXPERIMENTS_ROOT / run_id / "manifest.json"
+    if not manifest.exists():
+        raise HTTPException(status_code=404, detail=f"experiment run not found: {run_id}")
+    return json.loads(manifest.read_text())
+
+
+def list_experiment_artifacts(run_id: str) -> dict:
+    run_dir = EXPERIMENTS_ROOT / run_id
+    categories = ["config", "metrics", "logs", "results", "screenshots"]
+    out = {}
+    for category in categories:
+        base = run_dir / category
+        files = []
+        if base.exists():
+            files = [str(path.relative_to(run_dir)) for path in sorted(base.rglob('*')) if path.is_file()]
+        out[f"{category}_files"] = files
+    return out
+
+
+@app.get("/experiments")
+def list_experiments() -> dict:
+    EXPERIMENTS_ROOT.mkdir(parents=True, exist_ok=True)
+    runs = []
+    for manifest in sorted(EXPERIMENTS_ROOT.glob('*/manifest.json'), reverse=True):
+        data = json.loads(manifest.read_text())
+        runs.append({
+            "run_id": data.get("run_id"),
+            "policy": data.get("policy"),
+            "workload_file": data.get("workload_file"),
+            "run_status": data.get("run_status"),
+            "timestamp_start": data.get("timestamp_start"),
+            "timestamp_end": data.get("timestamp_end"),
+        })
+    return {"runs": runs}
+
+
+@app.get("/experiments/{run_id}")
+def get_experiment(run_id: str) -> dict:
+    manifest = read_experiment_manifest(run_id)
+    run_dir = EXPERIMENTS_ROOT / run_id
+    summary_path = run_dir / "metrics" / "summary.json"
+    summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
+    return {
+        "run_id": run_id,
+        "manifest": manifest,
+        "summary": summary,
+        "artifacts": list_experiment_artifacts(run_id),
+    }
+
+
+@app.post("/experiments")
+def create_experiment(request: ExperimentCreateRequest) -> dict:
+    code, stdout, stderr = run_experiment_script(
+        "create_run.py",
+        "--policy", request.policy,
+        "--workload-file", request.workload_file,
+        "--run-id", request.run_id,
+        "--notes", request.notes,
+    )
+    if code != 0:
+        raise HTTPException(status_code=400, detail=stderr or stdout or "failed to create experiment")
+    manifest = read_experiment_manifest(request.run_id)
+    return {
+        "run_id": request.run_id,
+        "run_status": manifest.get("run_status"),
+        "run_dir": stdout,
+    }
+
+
+@app.post("/experiments/{run_id}/start")
+def start_experiment(run_id: str) -> dict:
+    code, stdout, stderr = run_experiment_script("start_run.py", "--run-id", run_id)
+    if code != 0:
+        raise HTTPException(status_code=400, detail=stderr or stdout or "failed to start experiment")
+    try:
+        return json.loads(stdout)
+    except Exception:
+        return {"run_id": run_id, "output": stdout}
+
+
 @app.get("/artifacts/{artifact_path:path}")
 def get_artifact(artifact_path: str):
     try:
