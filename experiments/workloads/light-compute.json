@@ -1,0 +1,48 @@
+{
+  "routing_policy": "round_robin",
+  "submit_interval_ms": 1000,
+  "jobs": [
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "prime_count",
+        "params": { "n": 12000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "monte_carlo_pi",
+        "params": { "samples": 20000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "sort_numbers",
+        "params": { "count": 8000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "prime_count",
+        "params": { "n": 15000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "sort_numbers",
+        "params": { "count": 10000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "monte_carlo_pi",
+        "params": { "samples": 25000 }
+      }
+    }
+  ]
+}

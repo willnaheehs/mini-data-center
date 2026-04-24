@@ -1,0 +1,62 @@
+{
+  "routing_policy": "round_robin",
+  "submit_interval_ms": 150,
+  "jobs": [
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "matrix_multiply",
+        "params": { "size": 120 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "prime_count",
+        "params": { "n": 60000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "matrix_multiply",
+        "params": { "size": 140 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "monte_carlo_pi",
+        "params": { "samples": 300000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "prime_count",
+        "params": { "n": 80000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "matrix_multiply",
+        "params": { "size": 150 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "sort_numbers",
+        "params": { "count": 100000 }
+      }
+    },
+    {
+      "api_type": "compute",
+      "params": {
+        "task": "monte_carlo_pi",
+        "params": { "samples": 500000 }
+      }
+    }
+  ]
+}
