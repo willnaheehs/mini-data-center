@@ -1,8 +1,45 @@
 import importlib.util
 import json
+import sys
+import types
 from pathlib import Path
 
 DISPATCHER_PATH = Path(__file__).resolve().parent / "dispatcher" / "dispatcher.py"
+
+redis_stub = types.ModuleType("redis")
+
+
+class ImportRedisStub:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+redis_stub.Redis = ImportRedisStub
+sys.modules.setdefault("redis", redis_stub)
+
+prometheus_stub = types.ModuleType("prometheus_client")
+
+
+class _MetricStub:
+    def labels(self, **kwargs):
+        return self
+
+    def inc(self, amount=1):
+        return None
+
+    def set(self, value):
+        return None
+
+
+class _RegistryStub:
+    pass
+
+
+prometheus_stub.CollectorRegistry = _RegistryStub
+prometheus_stub.Counter = lambda *args, **kwargs: _MetricStub()
+prometheus_stub.Gauge = lambda *args, **kwargs: _MetricStub()
+prometheus_stub.push_to_gateway = lambda *args, **kwargs: None
+sys.modules.setdefault("prometheus_client", prometheus_stub)
 
 spec = importlib.util.spec_from_file_location("dispatcher_module", DISPATCHER_PATH)
 dispatcher = importlib.util.module_from_spec(spec)

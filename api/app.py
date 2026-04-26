@@ -644,6 +644,29 @@ EXPERIMENTS_ROOT = REPO_ROOT / "experiments" / "runs"
 RUNNER_DIR = REPO_ROOT / "experiments" / "runner"
 
 
+def ensure_experiments_runtime_available() -> None:
+    missing = []
+    expected_paths = [
+        RUNNER_DIR / "create_run.py",
+        RUNNER_DIR / "start_run.py",
+        RUNNER_DIR / "collect_run.py",
+        RUNNER_DIR / "summarize_run.py",
+        REPO_ROOT / "experiments" / "workloads",
+    ]
+    for path in expected_paths:
+        if not path.exists():
+            missing.append(str(path))
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "experiment runtime files are not available inside the API container",
+                "missing_paths": missing,
+                "hint": "Rebuild and redeploy the API image so /app/experiments is included.",
+            },
+        )
+
+
 class ExperimentCreateRequest(BaseModel):
     policy: Literal["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
     workload_file: str
@@ -654,7 +677,9 @@ class ExperimentCreateRequest(BaseModel):
 def run_experiment_script(script_name: str, *args: str) -> tuple[int, str, str]:
     import subprocess
 
-    cmd = [sys.executable, str(RUNNER_DIR / script_name), *args]
+    ensure_experiments_runtime_available()
+    script_path = RUNNER_DIR / script_name
+    cmd = [sys.executable, str(script_path), *args]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
