@@ -5,6 +5,7 @@ COPY api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY api/app.py ./app.py
 COPY api/index.html ./index.html
+COPY api/experiments.html ./experiments.html
 COPY common /app/common
 COPY experiments /app/experiments
 

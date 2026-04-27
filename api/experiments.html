@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Data Center Experiments</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #151b2f;
+      --panel-2: #1c2440;
+      --text: #eef2ff;
+      --muted: #a9b4d0;
+      --border: #2d375d;
+      --ok: #51cf66;
+      --warn: #fcc419;
+      --bad: #ff6b6b;
+      --blue: #74c0fc;
+      --purple: #b197fc;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #09101d, #0f1630); color: var(--text); }
+    .wrap { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+    .hero-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    h1,h2,h3,h4 { margin: 0 0 12px; }
+    p,.small { color: var(--muted); }
+    .small { font-size: 0.92rem; }
+    .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.1fr 1fr; }
+    .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18); }
+    label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
+    input, select, textarea, button, a.button-link { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
+    textarea { min-height: 110px; resize: vertical; }
+    button, a.button-link { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    button.secondary, a.button-link.secondary { background: #253055; }
+    button.ghost, a.button-link.ghost { background: transparent; border: 1px solid var(--border); }
+    pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; max-height: 420px; }
+    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: #243157; }
+    .pill.ok { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
+    .pill.warn { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
+    .pill.bad { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
+    .pill.blue { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
+    .pill.purple { background: rgba(177, 151, 252, 0.18); color: #d0bfff; }
+    .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .stack { display: grid; gap: 12px; }
+    .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+    .metric { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(14, 19, 36, 0.95)); }
+    .metric .value { font-size: 1.45rem; font-weight: 800; margin-bottom: 6px; }
+    .metric .label { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #c7d2fe; }
+    .detail-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(14, 19, 36, 0.95)); }
+    .workers-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .queue-bar { height: 12px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
+    .visual-lanes { display: grid; gap: 16px; }
+    .lane { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(12, 18, 34, 0.98)); }
+    .lane-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .bubble-row { display: flex; flex-wrap: wrap; gap: 8px; min-height: 38px; }
+    .bubble { padding: 8px 10px; border-radius: 999px; background: #243157; border: 1px solid rgba(116, 192, 252, 0.2); font-size: 0.83rem; }
+    .bubble.running { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
+    .bubble.dispatched { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
+    .bubble.completed { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
+    .bubble.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
+    .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 680px; overflow-y: auto; padding-right: 4px; }
+    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.98), rgba(12, 18, 34, 0.98)); cursor: pointer; }
+    .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25), 0 10px 30px rgba(20, 40, 90, 0.18); }
+    .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    details { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: #0d1428; }
+    summary { cursor: pointer; color: #d0d9ff; font-weight: 700; }
+    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
+    .banner.show { display: block; }
+    .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <h1>Experiments Dashboard</h1>
+        <p class="small">Plan runs, watch queue behavior live, and tell the routing story clearly during your demo.</p>
+      </div>
+      <div class="hero-actions">
+        <a href="/" class="button-link ghost">Back to Main Control Panel</a>
+        <span id="health-pill" class="pill">Checking API...</span>
+        <span id="policy-pill" class="pill blue">Policy: loading...</span>
+      </div>
+    </div>
+
+    <div id="action-banner" class="banner"></div>
+
+    <div class="grid-wide">
+      <section class="card stack">
+        <div>
+          <h2>Plan or Start an Experiment</h2>
+          <p class="small">Use this page only for experiment runs so your demo stays focused.</p>
+        </div>
+
+        <label for="experiment-policy">Policy</label>
+        <select id="experiment-policy">
+          <option value="round_robin">round_robin</option>
+          <option value="state_aware">state_aware</option>
+        </select>
+
+        <label for="experiment-workload">Workload</label>
+        <select id="experiment-workload">
+          <option value="experiments/workloads/light-compute.json">light-compute</option>
+          <option value="experiments/workloads/heavy-compute.json">heavy-compute</option>
+          <option value="experiments/workloads/mixed-real.json">mixed-real</option>
+        </select>
+
+        <label for="experiment-run-id">Run ID</label>
+        <input id="experiment-run-id" type="text" placeholder="2026-04-26-light-round-robin-run01" />
+
+        <label for="experiment-notes">Notes</label>
+        <textarea id="experiment-notes" placeholder="What are you trying to show in this run?"></textarea>
+
+        <div class="inline">
+          <button id="create-experiment-btn" class="secondary" style="max-width:180px;">Create run</button>
+          <button id="start-experiment-btn" style="max-width:180px;">Start run</button>
+          <button id="refresh-experiments-btn" class="ghost" style="max-width:180px;">Refresh experiments</button>
+        </div>
+      </section>
+
+      <section class="card stack">
+        <div>
+          <h2>Live Cluster Behavior</h2>
+          <p class="small">Use this while a run is active to explain queue buildup, worker selection, and job movement.</p>
+        </div>
+        <div class="inline">
+          <button id="refresh-live-btn" class="ghost" style="max-width:180px;">Refresh live view</button>
+          <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
+        </div>
+        <div id="cluster-metrics" class="metric-grid"></div>
+        <div id="workers-panel" class="workers-grid"></div>
+      </section>
+    </div>
+
+    <div class="grid" style="margin-top:20px;">
+      <section class="card stack">
+        <div class="job-header">
+          <div>
+            <h2>Live Routing Visual</h2>
+            <p class="small">A simple visual for what is queued, running, and done.</p>
+          </div>
+        </div>
+        <div id="live-visual" class="visual-lanes"></div>
+      </section>
+
+      <section class="card stack">
+        <div class="job-header">
+          <div>
+            <h2>Experiment Runs</h2>
+            <p class="small">Select a run to inspect metadata and summary.</p>
+          </div>
+        </div>
+        <div id="experiments-list" class="jobs-list"></div>
+      </section>
+    </div>
+
+    <div class="grid" style="margin-top:20px;">
+      <section class="card stack">
+        <div class="job-header">
+          <div>
+            <h2>Recent Jobs During Experiments</h2>
+            <p class="small">This helps you narrate which jobs are waiting, running, or finished.</p>
+          </div>
+        </div>
+        <div id="jobs-list" class="jobs-list"></div>
+      </section>
+
+      <section class="card stack">
+        <div>
+          <h2>Selected Experiment Detail</h2>
+          <p id="experiment-summary" class="small">Select a run to inspect it.</p>
+        </div>
+        <div id="experiment-overview" class="detail-grid"></div>
+        <details>
+          <summary>View experiment detail JSON</summary>
+          <pre id="experiment-detail-output">Select or create a run.</pre>
+        </details>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const healthPill = document.getElementById('health-pill');
+    const policyPill = document.getElementById('policy-pill');
+    const actionBanner = document.getElementById('action-banner');
+    const experimentPolicy = document.getElementById('experiment-policy');
+    const experimentWorkload = document.getElementById('experiment-workload');
+    const experimentRunId = document.getElementById('experiment-run-id');
+    const experimentNotes = document.getElementById('experiment-notes');
+    const createExperimentBtn = document.getElementById('create-experiment-btn');
+    const startExperimentBtn = document.getElementById('start-experiment-btn');
+    const refreshExperimentsBtn = document.getElementById('refresh-experiments-btn');
+    const refreshLiveBtn = document.getElementById('refresh-live-btn');
+    const autoRefresh = document.getElementById('auto-refresh');
+    const experimentsList = document.getElementById('experiments-list');
+    const experimentDetailOutput = document.getElementById('experiment-detail-output');
+    const experimentSummary = document.getElementById('experiment-summary');
+    const experimentOverview = document.getElementById('experiment-overview');
+    const clusterMetrics = document.getElementById('cluster-metrics');
+    const workersPanel = document.getElementById('workers-panel');
+    const liveVisual = document.getElementById('live-visual');
+    const jobsList = document.getElementById('jobs-list');
+
+    let currentExperimentRunId = '';
+    let currentClusterStatus = null;
+    let trackedJobs = [];
+    let pollTimer = null;
+
+    function pretty(data) { return JSON.stringify(data, null, 2); }
+    function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
+    function safe(value, fallback='n/a') { return value === undefined || value === null || value === '' ? fallback : value; }
+    function statusClass(status) {
+      if (status === 'completed') return 'ok';
+      if (status === 'failed') return 'bad';
+      if (status === 'running') return 'blue';
+      return 'warn';
+    }
+    function showBanner(message, kind='ok') {
+      actionBanner.textContent = message;
+      actionBanner.className = `banner show ${kind}`;
+      setTimeout(() => actionBanner.classList.remove('show'), 2600);
+    }
+    function formatDateTime(value) {
+      if (!value) return 'n/a';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
+    }
+    function formatRelativeTime(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+      const abs = Math.abs(diffSeconds);
+      const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+      if (abs < 60) return rtf.format(Math.round(diffSeconds), 'second');
+      if (abs < 3600) return rtf.format(Math.round(diffSeconds / 60), 'minute');
+      if (abs < 86400) return rtf.format(Math.round(diffSeconds / 3600), 'hour');
+      return rtf.format(Math.round(diffSeconds / 86400), 'day');
+    }
+    function formatWhen(value) {
+      if (!value) return 'n/a';
+      return `${formatDateTime(value)} (${formatRelativeTime(value)})`;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/healthz');
+        const data = await res.json();
+        healthPill.textContent = res.ok ? 'API and storage online' : 'API issue';
+        healthPill.className = `pill ${res.ok ? 'ok' : 'bad'}`;
+        policyPill.textContent = `Policy: ${data.routing_policy || 'unknown'}`;
+      } catch {
+        healthPill.textContent = 'API unreachable';
+        healthPill.className = 'pill bad';
+      }
+    }
+
+    async function fetchClusterStatus() {
+      const res = await fetch('/cluster/status');
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      currentClusterStatus = data;
+      trackedJobs = data.recent_jobs || [];
+      policyPill.textContent = `Policy: ${data.routing_policy}`;
+      renderClusterMetrics(data);
+      renderWorkers(data);
+      renderLiveVisual(data);
+      renderTrackedJobs();
+    }
+
+    function renderClusterMetrics(cluster) {
+      const workers = cluster?.workers || [];
+      const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
+      const runningJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'running').length;
+      const completedJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'completed').length;
+      const dispatchedJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'dispatched').length;
+      clusterMetrics.innerHTML = `
+        <div class="metric"><div class="label">Policy</div><div class="value">${cluster.routing_policy}</div><div class="small">Current routing strategy</div></div>
+        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div><div class="small">Jobs waiting in worker queues</div></div>
+        <div class="metric"><div class="label">Running</div><div class="value">${runningJobs}</div><div class="small">Jobs executing now</div></div>
+        <div class="metric"><div class="label">Dispatched</div><div class="value">${dispatchedJobs}</div><div class="small">Jobs sent but not started</div></div>
+        <div class="metric"><div class="label">Completed</div><div class="value">${completedJobs}</div><div class="small">Recently finished jobs</div></div>
+      `;
+    }
+
+    function renderWorkers(cluster) {
+      workersPanel.innerHTML = '';
+      (cluster?.workers || []).forEach(worker => {
+        const card = document.createElement('div');
+        card.className = 'detail';
+        const width = Math.min(100, (worker.queue_length || 0) * 20);
+        card.innerHTML = `
+          <div class="job-header">
+            <strong>${worker.worker_name}</strong>
+            <span class="pill ${worker.busy ? 'warn' : 'ok'}">${worker.busy ? 'Busy' : 'Idle'}</span>
+          </div>
+          <div class="small">Queue: ${worker.queue_name}</div>
+          <div class="small">Queue depth: ${worker.queue_length}</div>
+          <div class="small">Estimated load: ${worker.estimated_load}</div>
+          <div class="small">Busy flag: ${worker.busy_value}</div>
+          <div class="queue-bar"><div class="queue-fill" style="width:${width}%"></div></div>
+        `;
+        workersPanel.appendChild(card);
+      });
+    }
+
+    function laneHtml(title, jobs, className) {
+      const bubbles = jobs.length
+        ? jobs.map(job => `<span class="bubble ${className}">${cap(job.job_type)} • ${job.target_worker || job.worker_name || 'worker?'}</span>`).join('')
+        : '<span class="small">No jobs in this state right now.</span>';
+      return `
+        <div class="lane">
+          <div class="lane-header">
+            <strong>${title}</strong>
+            <span class="pill ${className === 'completed' ? 'ok' : className === 'running' ? 'blue' : className === 'failed' ? 'bad' : 'warn'}">${jobs.length}</span>
+          </div>
+          <div class="bubble-row">${bubbles}</div>
+        </div>
+      `;
+    }
+
+    function renderLiveVisual(cluster) {
+      const jobs = cluster?.recent_jobs || [];
+      const dispatched = jobs.filter(job => job.status === 'dispatched');
+      const running = jobs.filter(job => job.status === 'running');
+      const completed = jobs.filter(job => job.status === 'completed');
+      liveVisual.innerHTML = [
+        laneHtml('Queued / Dispatched', dispatched, 'dispatched'),
+        laneHtml('Running on Workers', running, 'running'),
+        laneHtml('Completed Recently', completed, 'completed'),
+      ].join('');
+    }
+
+    function renderTrackedJobs() {
+      if (!trackedJobs.length) {
+        jobsList.innerHTML = '<div class="empty">No recent jobs yet.</div>';
+        return;
+      }
+      jobsList.innerHTML = trackedJobs.map(job => `
+        <div class="job-item">
+          <div class="job-header">
+            <strong>${cap(job.job_type || job.type)}</strong>
+            <span class="pill ${statusClass(job.status)}">${job.status || 'unknown'}</span>
+          </div>
+          <div class="small">${job.job_id}</div>
+          <div class="small">Target: ${job.target_worker || 'pending'} • Worker: ${job.worker_name || 'pending'} • Policy: ${job.policy || 'unknown'}</div>
+          <div class="small">Submitted: ${formatWhen(job.submitted_at)}</div>
+        </div>
+      `).join('');
+    }
+
+    async function fetchExperiments() {
+      const res = await fetch('/experiments');
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      renderExperiments(data.runs || []);
+    }
+
+    function renderExperiments(runs) {
+      if (!runs.length) {
+        experimentsList.innerHTML = '<div class="empty">No experiment runs yet.</div>';
+        return;
+      }
+      experimentsList.innerHTML = runs.map(run => `
+        <div class="job-item ${currentExperimentRunId === run.run_id ? 'selected' : ''}" data-run-id="${run.run_id}">
+          <div class="job-header">
+            <strong>${run.run_id}</strong>
+            <span class="pill ${statusClass(run.run_status)}">${run.run_status}</span>
+          </div>
+          <div class="small">${run.policy} • ${run.workload_file}</div>
+          <div class="small">Started: ${safe(formatWhen(run.timestamp_start), 'not started')}</div>
+        </div>
+      `).join('');
+      experimentsList.querySelectorAll('[data-run-id]').forEach(el => {
+        el.addEventListener('click', () => loadExperiment(el.dataset.runId));
+      });
+    }
+
+    function renderExperimentOverview(data) {
+      const manifest = data?.manifest || {};
+      const summary = data?.summary || {};
+      experimentSummary.textContent = `${manifest.run_id || 'Run'} is ${manifest.run_status || 'unknown'}. Policy: ${safe(manifest.policy)}. Workload: ${safe(manifest.workload_file)}.`;
+      experimentOverview.innerHTML = `
+        <div class="detail"><h4>Status</h4><div class="pill ${statusClass(manifest.run_status)}">${safe(manifest.run_status)}</div><div class="small">Started: ${formatWhen(manifest.timestamp_start)}</div><div class="small">Ended: ${formatWhen(manifest.timestamp_end)}</div></div>
+        <div class="detail"><h4>Submission</h4><div class="small">Jobs submitted: ${safe(manifest.job_count, 0)}</div><div class="small">Policy applied: ${safe(manifest.policy_applied, manifest.policy)}</div><div class="small">Artifact collection: ${safe(manifest.artifact_collection_status)}</div></div>
+        <div class="detail"><h4>Outcome</h4><div class="small">Completed: ${safe(summary.completed_count, 0)}</div><div class="small">Failed: ${safe(summary.failed_count, 0)}</div><div class="small">Total: ${safe(summary.job_count, 0)}</div></div>
+        <div class="detail"><h4>Performance</h4><div class="small">Avg total: ${safe(summary.worker_total_time?.avg)}</div><div class="small">P95 total: ${safe(summary.worker_total_time?.p95)}</div><div class="small">Avg wait: ${safe(summary.wait_time?.avg)}</div></div>
+      `;
+    }
+
+    async function loadExperiment(runId) {
+      currentExperimentRunId = runId;
+      experimentRunId.value = runId;
+      const res = await fetch(`/experiments/${runId}`);
+      const data = await res.json();
+      experimentDetailOutput.textContent = pretty(data);
+      if (!res.ok) throw new Error(pretty(data));
+      renderExperimentOverview(data);
+      await fetchExperiments();
+    }
+
+    async function createExperiment() {
+      const payload = {
+        policy: experimentPolicy.value,
+        workload_file: experimentWorkload.value,
+        run_id: experimentRunId.value.trim(),
+        notes: experimentNotes.value.trim(),
+      };
+      if (!payload.run_id) {
+        alert('Run ID is required');
+        return;
+      }
+      const res = await fetch('/experiments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      showBanner(`Created experiment ${payload.run_id}`, 'ok');
+      await fetchExperiments();
+      await loadExperiment(payload.run_id);
+    }
+
+    async function startExperiment() {
+      const runId = experimentRunId.value.trim() || currentExperimentRunId;
+      if (!runId) {
+        alert('Set or select a run ID first');
+        return;
+      }
+      const res = await fetch(`/experiments/${runId}/start`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      showBanner(`Started experiment ${runId}`, 'ok');
+      await fetchExperiments();
+      await loadExperiment(runId);
+      await fetchClusterStatus();
+    }
+
+    async function refreshEverything() {
+      await checkHealth();
+      await fetchClusterStatus();
+      await fetchExperiments();
+      if (currentExperimentRunId) {
+        await loadExperiment(currentExperimentRunId);
+      }
+    }
+
+    function startPolling() {
+      stopPolling();
+      if (!autoRefresh.checked) return;
+      pollTimer = setInterval(async () => {
+        try {
+          await refreshEverything();
+        } catch (err) {
+          console.error(err);
+        }
+      }, 3000);
+    }
+
+    function stopPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    createExperimentBtn.addEventListener('click', () => createExperiment().catch(err => alert(String(err))));
+    startExperimentBtn.addEventListener('click', () => startExperiment().catch(err => alert(String(err))));
+    refreshExperimentsBtn.addEventListener('click', () => fetchExperiments().catch(err => console.error(err)));
+    refreshLiveBtn.addEventListener('click', () => fetchClusterStatus().catch(err => console.error(err)));
+    autoRefresh.addEventListener('change', () => autoRefresh.checked ? startPolling() : stopPolling());
+
+    refreshEverything();
+    startPolling();
+  </script>
+</body>
+</html>

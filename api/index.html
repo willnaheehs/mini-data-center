@@ -10,7 +10,6 @@
       --bg: #0b1020;
       --panel: #151b2f;
       --panel-2: #1c2440;
-      --panel-3: #0f1630;
       --text: #eef2ff;
       --muted: #a9b4d0;
       --border: #2d375d;
@@ -18,24 +17,24 @@
       --warn: #fcc419;
       --bad: #ff6b6b;
       --blue: #74c0fc;
-      --purple: #b197fc;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, #09101d, #0f1630); color: var(--text); }
     .wrap { max-width: 1320px; margin: 0 auto; padding: 24px; }
     .hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+    .hero-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     h1,h2,h3,h4 { margin: 0 0 12px; }
-    p,.muted,.small { color: var(--muted); }
+    p,.small { color: var(--muted); }
     .small { font-size: 0.92rem; }
     .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
     .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.15fr 1fr; }
     .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18); }
     label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
-    input, select, textarea, button { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
+    input, select, textarea, button, a.button-link { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
     textarea { min-height: 120px; resize: vertical; }
-    button { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); }
-    button.secondary { background: #253055; }
-    button.ghost { background: transparent; border: 1px solid var(--border); }
+    button, a.button-link { border: none; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #339af0, #5c7cfa); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    button.secondary, a.button-link.secondary { background: #253055; }
+    button.ghost, a.button-link.ghost { background: transparent; border: 1px solid var(--border); }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     pre { white-space: pre-wrap; word-break: break-word; background: #0c1225; border: 1px solid var(--border); border-radius: 14px; padding: 14px; overflow-x: auto; max-height: 380px; }
     .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: #243157; }
@@ -43,7 +42,6 @@
     .pill.warn { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
     .pill.bad { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
     .pill.blue { background: rgba(116, 192, 252, 0.18); color: #a5d8ff; }
-    .pill.purple { background: rgba(177, 151, 252, 0.18); color: #d0bfff; }
     .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .stack { display: grid; gap: 12px; }
     .metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
@@ -55,11 +53,10 @@
     .detail { border: 1px solid var(--border); border-radius: 14px; padding: 14px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.95), rgba(14, 19, 36, 0.95)); }
     .queue-bar { height: 10px; background: #0c1225; border-radius: 999px; overflow: hidden; margin-top: 8px; }
     .queue-fill { height: 100%; background: linear-gradient(135deg, #339af0, #5c7cfa); }
-    .queue-bar.large { height: 14px; margin-top: 10px; box-shadow: inset 0 0 0 1px rgba(116, 192, 252, 0.08); }
+    .queue-bar.large { height: 14px; margin-top: 10px; }
     .queue-fill.large { background: linear-gradient(135deg, #4dabf7, #7c83fd); }
     .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 640px; overflow-y: auto; padding-right: 4px; }
-    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.98), rgba(12, 18, 34, 0.98)); cursor: pointer; transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
-    .job-item:hover { border-color: #4c6ef5; transform: translateY(-1px); }
+    .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.98), rgba(12, 18, 34, 0.98)); cursor: pointer; }
     .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25), 0 10px 30px rgba(20, 40, 90, 0.18); }
     .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
     .lifecycle { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -71,7 +68,7 @@
     .artifact-link { color: #a5d8ff; text-decoration: none; }
     details { border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: #0d1428; }
     summary { cursor: pointer; color: #d0d9ff; font-weight: 700; }
-    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; box-shadow: 0 10px 24px rgba(8, 20, 14, 0.28); }
+    .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
     .banner.show { display: block; }
     .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
   </style>
@@ -81,8 +78,10 @@
     <div class="hero">
       <div>
         <h1>Mini Data Center Control Panel</h1>
+        <p class="small">Single-job control and live cluster visibility.</p>
       </div>
-      <div class="inline">
+      <div class="hero-actions">
+        <a href="/experiments/ui" class="button-link secondary">Open Experiments Page</a>
         <span id="health-pill" class="pill">Checking API...</span>
         <span id="policy-pill" class="pill blue">Policy: loading...</span>
       </div>
@@ -169,47 +168,6 @@
       <section class="card stack">
         <div class="job-header">
           <div>
-            <h2>Experiments</h2>
-            <p class="small">Create, start, and inspect experiment runs without disturbing the main job controls.</p>
-          </div>
-          <div class="inline">
-            <button id="refresh-experiments-btn" class="ghost" style="max-width:180px;">Refresh experiments</button>
-          </div>
-        </div>
-
-        <label for="experiment-policy">Policy</label>
-        <select id="experiment-policy">
-          <option value="round_robin">round_robin</option>
-          <option value="state_aware">state_aware</option>
-        </select>
-
-        <label for="experiment-workload">Workload</label>
-        <select id="experiment-workload">
-          <option value="experiments/workloads/light-compute.json">light-compute</option>
-          <option value="experiments/workloads/heavy-compute.json">heavy-compute</option>
-          <option value="experiments/workloads/mixed-real.json">mixed-real</option>
-        </select>
-
-        <label for="experiment-run-id">Run ID</label>
-        <input id="experiment-run-id" type="text" placeholder="2026-04-24-heavy-round_robin-run02" />
-
-        <label for="experiment-notes">Notes</label>
-        <textarea id="experiment-notes"></textarea>
-
-        <div class="inline">
-          <button id="create-experiment-btn" class="secondary" style="max-width:180px;">Create run</button>
-          <button id="start-experiment-btn" style="max-width:180px;">Start run</button>
-        </div>
-
-        <div id="experiments-list" class="jobs-list"></div>
-        <details>
-          <summary>Experiment detail</summary>
-          <pre id="experiment-detail-output">Select or create a run.</pre>
-        </details>
-      </section>
-      <section class="card stack">
-        <div class="job-header">
-          <div>
             <h2>Recent Jobs</h2>
             <p class="small">A compact activity feed of the latest submitted work.</p>
           </div>
@@ -277,22 +235,12 @@
     const jobOverview = document.getElementById('job-overview');
     const resultSummary = document.getElementById('result-summary');
     const actionBanner = document.getElementById('action-banner');
-    const experimentPolicy = document.getElementById('experiment-policy');
-    const experimentWorkload = document.getElementById('experiment-workload');
-    const experimentRunId = document.getElementById('experiment-run-id');
-    const experimentNotes = document.getElementById('experiment-notes');
-    const createExperimentBtn = document.getElementById('create-experiment-btn');
-    const startExperimentBtn = document.getElementById('start-experiment-btn');
-    const refreshExperimentsBtn = document.getElementById('refresh-experiments-btn');
-    const experimentsList = document.getElementById('experiments-list');
-    const experimentDetailOutput = document.getElementById('experiment-detail-output');
 
     let trackedJobs = [];
     let currentJobId = '';
     let pollTimer = null;
     let currentClusterStatus = null;
     let currentJobResult = null;
-    let currentExperimentRunId = '';
 
     function pretty(data) { return JSON.stringify(data, null, 2); }
     function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
@@ -322,12 +270,7 @@
       if (!value) return 'n/a';
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value;
-      return new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit'
-      }).format(date);
+      return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
     }
 
     function formatRelativeTime(value) {
@@ -470,21 +413,11 @@
 
     function buildFriendlyResult(status, resultPayload) {
       const result = resultPayload?.result || {};
-      if (status.status === 'failed') {
-        return `Job failed${status.worker_name ? ` on ${status.worker_name}` : ''}. ${status.error || resultPayload?.result_summary || 'Check raw JSON for details.'}`;
-      }
-      if (!resultPayload) {
-        return 'Result not ready yet.';
-      }
-      if (status.job_type === 'compute') {
-        return resultPayload.result_summary || 'Compute job completed.';
-      }
-      if (status.job_type === 'ml') {
-        return `Processed ${safe(result.sample_count, 0)} samples and predicted ${safe(result.positive_count, 0)} positives.`;
-      }
-      if (status.job_type === 'python_script') {
-        return `${result.script_name || 'Script'} exited with code ${safe(result.exit_code, 'unknown')} and produced ${(result.output_artifacts || []).length} output artifact(s).`;
-      }
+      if (status.status === 'failed') return `Job failed${status.worker_name ? ` on ${status.worker_name}` : ''}. ${status.error || resultPayload?.result_summary || 'Check raw JSON for details.'}`;
+      if (!resultPayload) return 'Result not ready yet.';
+      if (status.job_type === 'compute') return resultPayload.result_summary || 'Compute job completed.';
+      if (status.job_type === 'ml') return `Processed ${safe(result.sample_count, 0)} samples and predicted ${safe(result.positive_count, 0)} positives.`;
+      if (status.job_type === 'python_script') return `${result.script_name || 'Script'} exited with code ${safe(result.exit_code, 'unknown')} and produced ${(result.output_artifacts || []).length} output artifact(s).`;
       if (status.job_type === 'file_process') {
         const topWords = (result.top_words || []).slice(0, 3).map(item => `${item.word} (${item.count})`).join(', ');
         const preview = safe(result.preview, '').replace(/\s+/g, ' ').trim();
@@ -601,10 +534,7 @@
           response = await fetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'ml',
-              params: JSON.parse(document.getElementById('ml-json').value)
-            })
+            body: JSON.stringify({ type: 'ml', params: JSON.parse(document.getElementById('ml-json').value) })
           });
         }
 
@@ -623,79 +553,6 @@
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit job';
       }
-    }
-
-
-    async function fetchExperiments() {
-      const res = await fetch('/experiments');
-      const data = await res.json();
-      if (!res.ok) throw new Error(pretty(data));
-      renderExperiments(data.runs || []);
-    }
-
-    function renderExperiments(runs) {
-      if (!runs.length) {
-        experimentsList.innerHTML = '<div class="empty">No experiment runs yet.</div>';
-        return;
-      }
-      experimentsList.innerHTML = runs.map(run => `
-        <div class="job-item ${currentExperimentRunId === run.run_id ? 'selected' : ''}" data-run-id="${run.run_id}">
-          <div class="job-header">
-            <strong>${run.run_id}</strong>
-            <span class="pill ${statusClass(run.run_status)}">${run.run_status}</span>
-          </div>
-          <div class="small">${run.policy} • ${run.workload_file}</div>
-        </div>
-      `).join('');
-      experimentsList.querySelectorAll('[data-run-id]').forEach(el => {
-        el.addEventListener('click', () => loadExperiment(el.dataset.runId));
-      });
-    }
-
-    async function loadExperiment(runId) {
-      currentExperimentRunId = runId;
-      const res = await fetch(`/experiments/${runId}`);
-      const data = await res.json();
-      experimentDetailOutput.textContent = pretty(data);
-      if (!res.ok) throw new Error(pretty(data));
-      renderExperiments((await (await fetch('/experiments')).json()).runs || []);
-    }
-
-    async function createExperiment() {
-      const payload = {
-        policy: experimentPolicy.value,
-        workload_file: experimentWorkload.value,
-        run_id: experimentRunId.value.trim(),
-        notes: experimentNotes.value.trim(),
-      };
-      if (!payload.run_id) {
-        alert('Run ID is required');
-        return;
-      }
-      const res = await fetch('/experiments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(pretty(data));
-      showBanner(`Created experiment ${payload.run_id}`, 'ok');
-      await fetchExperiments();
-      await loadExperiment(payload.run_id);
-    }
-
-    async function startExperiment() {
-      const runId = experimentRunId.value.trim() || currentExperimentRunId;
-      if (!runId) {
-        alert('Set or select a run ID first');
-        return;
-      }
-      const res = await fetch(`/experiments/${runId}/start`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(pretty(data));
-      showBanner(`Started experiment ${runId}`, 'ok');
-      await fetchExperiments();
-      await loadExperiment(runId);
     }
 
     async function fetchStatus(jobId) {
@@ -762,9 +619,7 @@
     async function refreshEverything() {
       await checkHealth();
       await fetchClusterStatus();
-      if (currentJobId) {
-        await loadJob(currentJobId);
-      }
+      if (currentJobId) await loadJob(currentJobId);
     }
 
     function startPolling() {
@@ -797,14 +652,10 @@
     applyPolicyBtn.addEventListener('click', applyRoutingPolicy);
     refreshClusterBtn.addEventListener('click', refreshEverything);
     refreshJobsBtn.addEventListener('click', fetchClusterStatus);
-    createExperimentBtn.addEventListener('click', () => createExperiment().catch(err => alert(String(err))));
-    startExperimentBtn.addEventListener('click', () => startExperiment().catch(err => alert(String(err))));
-    refreshExperimentsBtn.addEventListener('click', () => fetchExperiments().catch(err => console.error(err)));
     autoRefresh.addEventListener('change', () => autoRefresh.checked ? startPolling() : stopPolling());
 
     setVisibleFields();
     refreshEverything();
-    fetchExperiments().catch(err => console.error(err));
     startPolling();
   </script>
 </body>

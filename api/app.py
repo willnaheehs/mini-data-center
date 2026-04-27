@@ -381,6 +381,11 @@ def index() -> FileResponse:
     return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
 
 
+@app.get("/experiments/ui")
+def experiments_ui() -> FileResponse:
+    return FileResponse(os.path.join(os.path.dirname(__file__), "experiments.html"))
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     try:
