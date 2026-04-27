@@ -42,6 +42,8 @@ spec:
               value: "jobs-api:index"
             - name: JOB_TTL_SEC
               value: "604800"
+            - name: MINI_DC_RUNS_ROOT
+              value: "/data/experiments/runs"
             - name: UPLOAD_DIR
               value: "/data/uploads"
             - name: MINIO_ENDPOINT

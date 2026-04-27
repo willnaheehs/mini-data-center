@@ -50,6 +50,7 @@ MAX_INPUT_FILES = int(os.getenv("MAX_INPUT_FILES", "8"))
 MAX_INPUT_FILE_BYTES = int(os.getenv("MAX_INPUT_FILE_BYTES", str(5 * 1024 * 1024)))
 FILE_PROCESS_MAX_BYTES = int(os.getenv("FILE_PROCESS_MAX_BYTES", str(5 * 1024 * 1024)))
 RECENT_JOBS_LIMIT = int(os.getenv("RECENT_JOBS_LIMIT", "20"))
+MINI_DC_RUNS_ROOT = Path(os.getenv("MINI_DC_RUNS_ROOT", "/data/experiments/runs"))
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 app = FastAPI(title="mini-data-center api", version="0.3.0")
@@ -645,7 +646,7 @@ def get_job_result(job_id: str) -> dict:
 
 
 
-EXPERIMENTS_ROOT = REPO_ROOT / "experiments" / "runs"
+EXPERIMENTS_ROOT = MINI_DC_RUNS_ROOT
 RUNNER_DIR = REPO_ROOT / "experiments" / "runner"
 
 
@@ -684,8 +685,10 @@ def run_experiment_script(script_name: str, *args: str) -> tuple[int, str, str]:
 
     ensure_experiments_runtime_available()
     script_path = RUNNER_DIR / script_name
+    env = os.environ.copy()
+    env["MINI_DC_RUNS_ROOT"] = str(MINI_DC_RUNS_ROOT)
     cmd = [sys.executable, str(script_path), *args]
-    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, env=env)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
@@ -764,10 +767,30 @@ def start_experiment(run_id: str) -> dict:
     code, stdout, stderr = run_experiment_script("start_run.py", "--run-id", run_id)
     if code != 0:
         raise HTTPException(status_code=400, detail=stderr or stdout or "failed to start experiment")
+
+    collect_code, collect_stdout, collect_stderr = run_experiment_script("collect_run.py", "--run-id", run_id)
+    if collect_code != 0:
+        raise HTTPException(status_code=400, detail=collect_stderr or collect_stdout or "failed to collect experiment results")
+
+    summarize_code, summarize_stdout, summarize_stderr = run_experiment_script("summarize_run.py", "--run-id", run_id)
+    if summarize_code != 0:
+        raise HTTPException(status_code=400, detail=summarize_stderr or summarize_stdout or "failed to summarize experiment")
+
+    manifest = read_experiment_manifest(run_id)
+    summary_path = EXPERIMENTS_ROOT / run_id / "metrics" / "summary.json"
+    summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
+    start_payload = None
     try:
-        return json.loads(stdout)
+        start_payload = json.loads(stdout)
     except Exception:
-        return {"run_id": run_id, "output": stdout}
+        start_payload = {"output": stdout}
+    return {
+        "run_id": run_id,
+        "start": start_payload,
+        "collect": collect_stdout,
+        "summary": summary,
+        "run_status": manifest.get("run_status"),
+    }
 
 
 @app.get("/artifacts/{artifact_path:path}")

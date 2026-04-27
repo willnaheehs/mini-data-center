@@ -8,7 +8,7 @@ from urllib import request, error
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXPERIMENTS_ROOT = REPO_ROOT / "experiments"
-RUNS_ROOT = EXPERIMENTS_ROOT / "runs"
+RUNS_ROOT = Path(os.getenv("MINI_DC_RUNS_ROOT", str(EXPERIMENTS_ROOT / "runs"))).resolve()
 DEFAULT_API_BASE = os.getenv("MINI_DC_API_BASE", "http://node1-control:30080")
 
 
