@@ -28,7 +28,7 @@
     p,.small { color: var(--muted); }
     .small { font-size: 0.92rem; }
     .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1.1fr 1fr; }
+    .grid-wide { display: grid; gap: 20px; grid-template-columns: 1fr; }
     .card { background: rgba(21, 27, 47, 0.96); border: 1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18); }
     label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 0.92rem; }
     input, select, textarea, button, a.button-link { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 12px; font: inherit; }
@@ -63,7 +63,7 @@
     .bubble.dispatched { background: rgba(252, 196, 25, 0.18); color: #ffe066; }
     .bubble.completed { background: rgba(81, 207, 102, 0.18); color: #8ce99a; }
     .bubble.failed { background: rgba(255, 107, 107, 0.18); color: #ffa8a8; }
-    .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 680px; overflow-y: auto; padding-right: 4px; }
+    .jobs-list { display: grid; gap: 10px; margin-top: 14px; max-height: 520px; overflow-y: auto; padding-right: 4px; }
     .job-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(18, 24, 45, 0.98), rgba(12, 18, 34, 0.98)); cursor: pointer; }
     .job-item.selected { border-color: #74c0fc; box-shadow: 0 0 0 1px rgba(116, 192, 252, 0.25), 0 10px 30px rgba(20, 40, 90, 0.18); }
     .job-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
@@ -79,7 +79,6 @@
     <div class="hero">
       <div>
         <h1>Experiments Dashboard</h1>
-        <p class="small">Plan runs, watch queue behavior live, and tell the routing story clearly during your demo.</p>
       </div>
       <div class="hero-actions">
         <a href="/" class="button-link ghost">Back to Main Control Panel</a>
@@ -92,60 +91,57 @@
 
     <div class="grid-wide">
       <section class="card stack">
-        <div>
-          <h2>Plan or Start an Experiment</h2>
-          <p class="small">Use this page only for experiment runs so your demo stays focused.</p>
+        <div class="job-header">
+          <h2>Run Controls</h2>
+          <div class="inline">
+            <button id="refresh-experiments-btn" class="ghost" style="max-width:180px;">Refresh runs</button>
+            <button id="refresh-live-btn" class="ghost" style="max-width:180px;">Refresh live view</button>
+            <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
+          </div>
         </div>
 
-        <label for="experiment-policy">Policy</label>
-        <select id="experiment-policy">
-          <option value="round_robin">round_robin</option>
-          <option value="state_aware">state_aware</option>
-        </select>
-
-        <label for="experiment-workload">Workload</label>
-        <select id="experiment-workload">
-          <option value="experiments/workloads/light-compute.json">light-compute</option>
-          <option value="experiments/workloads/heavy-compute.json">heavy-compute</option>
-          <option value="experiments/workloads/mixed-real.json">mixed-real</option>
-        </select>
+        <div class="detail-grid">
+          <div>
+            <label for="experiment-policy">Policy</label>
+            <select id="experiment-policy">
+              <option value="round_robin">round_robin</option>
+              <option value="state_aware">state_aware</option>
+            </select>
+          </div>
+          <div>
+            <label for="experiment-workload">Workload</label>
+            <select id="experiment-workload">
+              <option value="experiments/workloads/light-compute.json">light-compute</option>
+              <option value="experiments/workloads/heavy-compute.json">heavy-compute</option>
+              <option value="experiments/workloads/mixed-real.json">mixed-real</option>
+            </select>
+          </div>
+        </div>
 
         <label for="experiment-run-id">Run ID</label>
         <input id="experiment-run-id" type="text" placeholder="2026-04-26-light-round-robin-run01" />
 
-        <label for="experiment-notes">Notes</label>
-        <textarea id="experiment-notes" placeholder="What are you trying to show in this run?"></textarea>
+        <details>
+          <summary>Optional notes</summary>
+          <label for="experiment-notes">Notes</label>
+          <textarea id="experiment-notes" placeholder="What are you trying to show in this run?"></textarea>
+        </details>
 
         <div class="inline">
           <button id="create-experiment-btn" class="secondary" style="max-width:180px;">Create run</button>
           <button id="start-experiment-btn" style="max-width:180px;">Start run</button>
-          <button id="refresh-experiments-btn" class="ghost" style="max-width:180px;">Refresh experiments</button>
         </div>
-      </section>
 
-      <section class="card stack">
-        <div>
-          <h2>Live Cluster Behavior</h2>
-          <p class="small">Use this while a run is active to explain queue buildup, worker selection, and job movement.</p>
-        </div>
-        <div class="inline">
-          <button id="refresh-live-btn" class="ghost" style="max-width:180px;">Refresh live view</button>
-          <label class="small"><input id="auto-refresh" type="checkbox" checked style="width:auto; margin-right:8px;" />Auto-refresh</label>
-        </div>
         <div id="cluster-metrics" class="metric-grid"></div>
-        <div id="workers-panel" class="workers-grid"></div>
       </section>
     </div>
 
     <div class="grid" style="margin-top:20px;">
       <section class="card stack">
-        <div class="job-header">
-          <div>
-            <h2>Live Routing Visual</h2>
-            <p class="small">A simple visual for what is queued, running, and done.</p>
-          </div>
+        <div>
+          <h2>Workers</h2>
         </div>
-        <div id="live-visual" class="visual-lanes"></div>
+        <div id="workers-panel" class="workers-grid"></div>
       </section>
 
       <section class="card stack">
@@ -163,16 +159,15 @@
       <section class="card stack">
         <div class="job-header">
           <div>
-            <h2>Recent Jobs During Experiments</h2>
-            <p class="small">This helps you narrate which jobs are waiting, running, or finished.</p>
+            <h2>Live Routing Visual</h2>
           </div>
         </div>
-        <div id="jobs-list" class="jobs-list"></div>
+        <div id="live-visual" class="visual-lanes"></div>
       </section>
 
       <section class="card stack">
         <div>
-          <h2>Selected Experiment Detail</h2>
+          <h2>Selected Experiment</h2>
           <p id="experiment-summary" class="small">Select a run to inspect it.</p>
         </div>
         <div id="experiment-overview" class="detail-grid"></div>
@@ -204,11 +199,9 @@
     const clusterMetrics = document.getElementById('cluster-metrics');
     const workersPanel = document.getElementById('workers-panel');
     const liveVisual = document.getElementById('live-visual');
-    const jobsList = document.getElementById('jobs-list');
 
     let currentExperimentRunId = '';
     let currentClusterStatus = null;
-    let trackedJobs = [];
     let pollTimer = null;
 
     function pretty(data) { return JSON.stringify(data, null, 2); }
@@ -266,12 +259,10 @@
       const data = await res.json();
       if (!res.ok) throw new Error(pretty(data));
       currentClusterStatus = data;
-      trackedJobs = data.recent_jobs || [];
       policyPill.textContent = `Policy: ${data.routing_policy}`;
       renderClusterMetrics(data);
       renderWorkers(data);
       renderLiveVisual(data);
-      renderTrackedJobs();
     }
 
     function renderClusterMetrics(cluster) {
@@ -279,13 +270,11 @@
       const totalQueued = workers.reduce((sum, worker) => sum + (worker.queue_length || 0), 0);
       const runningJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'running').length;
       const completedJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'completed').length;
-      const dispatchedJobs = (cluster?.recent_jobs || []).filter(job => job.status === 'dispatched').length;
       clusterMetrics.innerHTML = `
-        <div class="metric"><div class="label">Policy</div><div class="value">${cluster.routing_policy}</div><div class="small">Current routing strategy</div></div>
-        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div><div class="small">Jobs waiting in worker queues</div></div>
-        <div class="metric"><div class="label">Running</div><div class="value">${runningJobs}</div><div class="small">Jobs executing now</div></div>
-        <div class="metric"><div class="label">Dispatched</div><div class="value">${dispatchedJobs}</div><div class="small">Jobs sent but not started</div></div>
-        <div class="metric"><div class="label">Completed</div><div class="value">${completedJobs}</div><div class="small">Recently finished jobs</div></div>
+        <div class="metric"><div class="label">Policy</div><div class="value">${cluster.routing_policy}</div></div>
+        <div class="metric"><div class="label">Queued</div><div class="value">${totalQueued}</div></div>
+        <div class="metric"><div class="label">Running</div><div class="value">${runningJobs}</div></div>
+        <div class="metric"><div class="label">Completed</div><div class="value">${completedJobs}</div></div>
       `;
     }
 
@@ -335,24 +324,6 @@
         laneHtml('Running on Workers', running, 'running'),
         laneHtml('Completed Recently', completed, 'completed'),
       ].join('');
-    }
-
-    function renderTrackedJobs() {
-      if (!trackedJobs.length) {
-        jobsList.innerHTML = '<div class="empty">No recent jobs yet.</div>';
-        return;
-      }
-      jobsList.innerHTML = trackedJobs.map(job => `
-        <div class="job-item">
-          <div class="job-header">
-            <strong>${cap(job.job_type || job.type)}</strong>
-            <span class="pill ${statusClass(job.status)}">${job.status || 'unknown'}</span>
-          </div>
-          <div class="small">${job.job_id}</div>
-          <div class="small">Target: ${job.target_worker || 'pending'} • Worker: ${job.worker_name || 'pending'} • Policy: ${job.policy || 'unknown'}</div>
-          <div class="small">Submitted: ${formatWhen(job.submitted_at)}</div>
-        </div>
-      `).join('');
     }
 
     async function fetchExperiments() {
