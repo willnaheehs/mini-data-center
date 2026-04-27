@@ -743,6 +743,19 @@ def get_experiment(run_id: str) -> dict:
     }
 
 
+@app.get("/experiments/{run_id}/files/{file_path:path}")
+def get_experiment_file(run_id: str, file_path: str):
+    run_dir = (EXPERIMENTS_ROOT / run_id).resolve()
+    file_full_path = (run_dir / file_path).resolve()
+    try:
+        file_full_path.relative_to(run_dir)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid experiment file path") from exc
+    if not file_full_path.exists() or not file_full_path.is_file():
+        raise HTTPException(status_code=404, detail="experiment file not found")
+    return FileResponse(str(file_full_path), filename=file_full_path.name)
+
+
 @app.post("/experiments")
 def create_experiment(request: ExperimentCreateRequest) -> dict:
     code, stdout, stderr = run_experiment_script(

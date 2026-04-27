@@ -72,6 +72,9 @@
     .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
     .banner.show { display: block; }
     .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
+    .artifact-list { display: grid; gap: 8px; margin-top: 10px; }
+    .artifact-link { color: #a5d8ff; text-decoration: none; }
+    .artifact-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -171,6 +174,10 @@
           <p id="experiment-summary" class="small">Select a run to inspect it.</p>
         </div>
         <div id="experiment-overview" class="detail-grid"></div>
+        <div>
+          <h3>Run Artifacts</h3>
+          <div id="experiment-artifacts" class="artifact-list"><div class="empty">Select a run to view files.</div></div>
+        </div>
         <details>
           <summary>View experiment detail JSON</summary>
           <pre id="experiment-detail-output">Select or create a run.</pre>
@@ -196,6 +203,7 @@
     const experimentDetailOutput = document.getElementById('experiment-detail-output');
     const experimentSummary = document.getElementById('experiment-summary');
     const experimentOverview = document.getElementById('experiment-overview');
+    const experimentArtifacts = document.getElementById('experiment-artifacts');
     const clusterMetrics = document.getElementById('cluster-metrics');
     const workersPanel = document.getElementById('workers-panel');
     const liveVisual = document.getElementById('live-visual');
@@ -353,6 +361,23 @@
       });
     }
 
+    function renderExperimentArtifacts(runId, artifacts) {
+      const entries = [];
+      Object.entries(artifacts || {}).forEach(([category, files]) => {
+        (files || []).forEach(file => entries.push({ category, file }));
+      });
+      if (!entries.length) {
+        experimentArtifacts.innerHTML = '<div class="empty">No artifact files found for this run yet.</div>';
+        return;
+      }
+      entries.sort((a, b) => a.file.localeCompare(b.file));
+      experimentArtifacts.innerHTML = entries.map(({ category, file }) => {
+        const href = `/experiments/${encodeURIComponent(runId)}/files/${file.split('/').map(encodeURIComponent).join('/')}`;
+        const label = file.split('/').pop();
+        return `<a class="artifact-link" href="${href}" target="_blank" rel="noopener noreferrer">${label}</a><div class="small">${category.replace('_files', '')} • ${file}</div>`;
+      }).join('');
+    }
+
     function renderExperimentOverview(data) {
       const manifest = data?.manifest || {};
       const summary = data?.summary || {};
@@ -363,6 +388,7 @@
         <div class="detail"><h4>Outcome</h4><div class="small">Completed: ${safe(summary.completed_count, 0)}</div><div class="small">Failed: ${safe(summary.failed_count, 0)}</div><div class="small">Total: ${safe(summary.job_count, 0)}</div></div>
         <div class="detail"><h4>Performance</h4><div class="small">Avg total: ${safe(summary.worker_total_time?.avg)}</div><div class="small">P95 total: ${safe(summary.worker_total_time?.p95)}</div><div class="small">Avg wait: ${safe(summary.wait_time?.avg)}</div></div>
       `;
+      renderExperimentArtifacts(manifest.run_id || data?.run_id || '', data?.artifacts || {});
     }
 
     async function loadExperiment(runId) {
