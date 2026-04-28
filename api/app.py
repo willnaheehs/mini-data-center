@@ -818,7 +818,7 @@ def list_experiment_artifacts(run_id: str) -> dict:
 def list_experiments() -> dict:
     EXPERIMENTS_ROOT.mkdir(parents=True, exist_ok=True)
     runs = []
-    for manifest in sorted(EXPERIMENTS_ROOT.glob('*/manifest.json'), reverse=True):
+    for manifest in EXPERIMENTS_ROOT.glob('*/manifest.json'):
         data = json.loads(manifest.read_text())
         runs.append({
             "run_id": data.get("run_id"),
@@ -828,6 +828,10 @@ def list_experiments() -> dict:
             "timestamp_start": data.get("timestamp_start"),
             "timestamp_end": data.get("timestamp_end"),
         })
+    runs.sort(key=lambda run: (
+        run.get("timestamp_start") or run.get("timestamp_end") or "",
+        run.get("run_id") or "",
+    ), reverse=True)
     return {"runs": runs}
 
 
