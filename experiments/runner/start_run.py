@@ -38,7 +38,7 @@ def materialize_job(job: dict) -> dict:
     return expanded
 
 
-def expand_workload_jobs(workload: dict) -> list[dict]:
+def expand_workload_jobs(workload: dict, job_count_override: int = 0) -> list[dict]:
     if "job_groups" in workload:
         jobs = []
         for group in workload["job_groups"]:
@@ -54,6 +54,17 @@ def expand_workload_jobs(workload: dict) -> list[dict]:
     if workload.get("shuffle_jobs"):
         rng = random.Random(workload.get("shuffle_seed", 42))
         rng.shuffle(jobs)
+
+    if job_count_override > 0:
+        if not jobs:
+            return []
+        if job_count_override <= len(jobs):
+            jobs = jobs[:job_count_override]
+        else:
+            repeated = []
+            while len(repeated) < job_count_override:
+                repeated.extend(copy.deepcopy(jobs))
+            jobs = repeated[:job_count_override]
 
     return [materialize_job(job) for job in jobs]
 
@@ -83,7 +94,9 @@ def main() -> None:
 
     workload_file = REPO_ROOT / manifest["workload_file"]
     workload = json.loads(workload_file.read_text())
-    expanded_jobs = expand_workload_jobs(workload)
+    requested_job_count = int(manifest.get("job_count") or 0)
+    expanded_jobs = expand_workload_jobs(workload, job_count_override=requested_job_count)
+    submit_interval_ms = int(manifest.get("submit_interval_ms") or workload.get("submit_interval_ms", 0))
 
     policy = manifest["policy"]
     api_request("POST", "/routing-policy", payload={"policy": policy}, api_base=args.api_base)
@@ -98,7 +111,7 @@ def main() -> None:
             "runner_submitted_at": submitted_at_wall,
             "job_request": job,
         }
-        time.sleep(workload.get("submit_interval_ms", 0) / 1000.0)
+        time.sleep(submit_interval_ms / 1000.0)
 
     manifest["timestamp_start"] = utc_now_iso()
     manifest["run_status"] = "running"
@@ -106,6 +119,7 @@ def main() -> None:
     manifest["submitted_job_ids"] = submitted_job_ids
     manifest["job_count"] = len(submitted_job_ids)
     manifest["expanded_job_count"] = len(expanded_jobs)
+    manifest["submit_interval_ms_effective"] = submit_interval_ms
     manifest["submission_records"] = submission_records
     write_json(manifest_file, manifest)
 

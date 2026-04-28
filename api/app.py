@@ -780,6 +780,8 @@ class ExperimentCreateRequest(BaseModel):
     workload_file: str
     run_id: str
     notes: str = ""
+    job_count: int = 0
+    submit_interval_ms: int = 0
 
 
 def run_experiment_script(script_name: str, *args: str) -> tuple[int, str, str]:
@@ -827,6 +829,8 @@ def list_experiments() -> dict:
             "run_status": data.get("run_status"),
             "timestamp_start": data.get("timestamp_start"),
             "timestamp_end": data.get("timestamp_end"),
+            "job_count": data.get("job_count"),
+            "submit_interval_ms": data.get("submit_interval_ms"),
         })
     runs.sort(key=lambda run: (
         run.get("timestamp_start") or run.get("timestamp_end") or "",
@@ -870,6 +874,8 @@ def create_experiment(request: ExperimentCreateRequest) -> dict:
         "--workload-file", request.workload_file,
         "--run-id", request.run_id,
         "--notes", request.notes,
+        "--job-count", str(request.job_count),
+        "--submit-interval-ms", str(request.submit_interval_ms),
     )
     if code != 0:
         raise HTTPException(status_code=400, detail=stderr or stdout or "failed to create experiment")

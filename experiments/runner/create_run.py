@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--notes", default="")
     parser.add_argument("--job-count", type=int, default=0)
+    parser.add_argument("--submit-interval-ms", type=int, default=0)
     parser.add_argument("--submission-pattern", default="api-driven")
     args = parser.parse_args()
 
@@ -31,6 +32,7 @@ def main() -> None:
         "policy": args.policy,
         "workload_file": args.workload_file,
         "job_count": args.job_count,
+        "submit_interval_ms": args.submit_interval_ms,
         "submission_pattern": args.submission_pattern,
         "run_status": "planned",
         "submitted_job_ids": [],

@@ -126,6 +126,17 @@
           </div>
         </div>
 
+        <div class="detail-grid">
+          <div>
+            <label for="experiment-job-count">Number of jobs</label>
+            <input id="experiment-job-count" type="number" min="1" step="1" value="100" />
+          </div>
+          <div>
+            <label for="experiment-submit-interval">Arrival interval (ms)</label>
+            <input id="experiment-submit-interval" type="number" min="0" step="1" value="250" />
+          </div>
+        </div>
+
         <label for="experiment-run-id">Run ID</label>
         <input id="experiment-run-id" type="text" placeholder="2026-04-26-light-round-robin-run01" />
 
@@ -198,6 +209,8 @@
     const actionBanner = document.getElementById('action-banner');
     const experimentPolicy = document.getElementById('experiment-policy');
     const experimentWorkload = document.getElementById('experiment-workload');
+    const experimentJobCount = document.getElementById('experiment-job-count');
+    const experimentSubmitInterval = document.getElementById('experiment-submit-interval');
     const experimentRunId = document.getElementById('experiment-run-id');
     const experimentNotes = document.getElementById('experiment-notes');
     const createExperimentBtn = document.getElementById('create-experiment-btn');
@@ -361,6 +374,7 @@
             <span class="pill ${statusClass(run.run_status)}">${run.run_status}</span>
           </div>
           <div class="small">${run.policy} • ${run.workload_file}</div>
+          <div class="small">${safe(run.job_count, 'n/a')} jobs • ${safe(run.submit_interval_ms, 'default')} ms</div>
           <div class="small">Started: ${safe(formatWhen(run.timestamp_start), 'not started')}</div>
         </div>
       `).join('');
@@ -390,9 +404,14 @@
       const manifest = data?.manifest || {};
       const summary = data?.summary || {};
       experimentSummary.textContent = `${manifest.run_id || 'Run'} is ${manifest.run_status || 'unknown'}. Policy: ${safe(manifest.policy)}. Workload: ${safe(manifest.workload_file)}.`;
+      if (manifest.policy) experimentPolicy.value = manifest.policy;
+      if (manifest.workload_file) experimentWorkload.value = manifest.workload_file;
+      if (manifest.job_count) experimentJobCount.value = manifest.job_count;
+      if (manifest.submit_interval_ms !== undefined && manifest.submit_interval_ms !== null) experimentSubmitInterval.value = manifest.submit_interval_ms;
       experimentOverview.innerHTML = `
         <div class="detail"><h4>Status</h4><div class="pill ${statusClass(manifest.run_status)}">${safe(manifest.run_status)}</div><div class="small">Started: ${formatWhen(manifest.timestamp_start)}</div><div class="small">Ended: ${formatWhen(manifest.timestamp_end)}</div></div>
-        <div class="detail"><h4>Submission</h4><div class="small">Jobs submitted: ${safe(manifest.job_count, 0)}</div><div class="small">Policy applied: ${safe(manifest.policy_applied, manifest.policy)}</div><div class="small">Artifact collection: ${safe(manifest.artifact_collection_status)}</div></div>
+        <div class="detail"><h4>Submission</h4><div class="small">Jobs submitted: ${safe(manifest.job_count, 0)}</div><div class="small">Arrival interval: ${safe(manifest.submit_interval_ms_effective ?? manifest.submit_interval_ms, 'default')} ms</div><div class="small">Policy applied: ${safe(manifest.policy_applied, manifest.policy)}</div><div class="small">Artifact collection: ${safe(manifest.artifact_collection_status)}</div></div>
+        <div class="detail"><h4>Config</h4><div class="small">Requested jobs: ${safe(manifest.job_count, 0)}</div><div class="small">Expanded jobs: ${safe(manifest.expanded_job_count, manifest.job_count ?? 0)}</div><div class="small">Workload: ${safe(manifest.workload_file)}</div></div>
         <div class="detail"><h4>Outcome</h4><div class="small">Completed: ${safe(summary.completed_count, 0)}</div><div class="small">Failed: ${safe(summary.failed_count, 0)}</div><div class="small">Total: ${safe(summary.job_count, 0)}</div></div>
         <div class="detail"><h4>Performance</h4><div class="small">Avg total: ${safe(summary.worker_total_time?.avg)}</div><div class="small">P95 total: ${safe(summary.worker_total_time?.p95)}</div><div class="small">Avg wait: ${safe(summary.wait_time?.avg)}</div></div>
       `;
@@ -418,9 +437,19 @@
         workload_file: experimentWorkload.value,
         run_id: experimentRunId.value.trim(),
         notes: experimentNotes.value.trim(),
+        job_count: Number(experimentJobCount.value || 0),
+        submit_interval_ms: Number(experimentSubmitInterval.value || 0),
       };
       if (!payload.run_id) {
         alert('Run ID is required');
+        return;
+      }
+      if (payload.job_count < 1) {
+        alert('Number of jobs must be at least 1');
+        return;
+      }
+      if (payload.submit_interval_ms < 0) {
+        alert('Arrival interval must be 0 or greater');
         return;
       }
       const res = await fetch('/experiments', {
