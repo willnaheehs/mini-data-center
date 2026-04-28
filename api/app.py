@@ -37,7 +37,7 @@ WORKER_QUEUES = [
         "busy_key": os.getenv("BUSY_KEY_NODE3", "busy-node3"),
     },
 ]
-SUPPORTED_ROUTING_POLICIES = ["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
+SUPPORTED_ROUTING_POLICIES = ["round_robin", "random", "shortest_queue", "adaptive", "power_of_two", "state_aware"]
 JOB_STATUS_PREFIX = os.getenv("JOB_STATUS_PREFIX", "job-status:")
 JOB_RESULT_PREFIX = os.getenv("JOB_RESULT_PREFIX", "job-result:")
 JOB_PAYLOAD_PREFIX = os.getenv("JOB_PAYLOAD_PREFIX", "job-payload:")
@@ -103,7 +103,7 @@ class JobStatusResponse(BaseModel):
 
 
 class RoutingPolicyUpdateRequest(BaseModel):
-    policy: Literal["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
+    policy: Literal["round_robin", "random", "shortest_queue", "adaptive", "power_of_two", "state_aware"]
 
 
 class FileUploadResponse(BaseModel):
@@ -205,41 +205,90 @@ def get_cluster_snapshot() -> dict:
     }
 
 
+def get_recent_worker_service_stats(limit: int = 40) -> dict[str, dict[str, float]]:
+    job_ids = r.zrevrange(JOB_INDEX_KEY, 0, max(0, limit - 1))
+    grouped: dict[str, list[float]] = {}
+    for job_id in job_ids:
+        result_doc = redis_get_json(result_key(job_id)) or {}
+        worker_name = result_doc.get("worker_name")
+        metrics = result_doc.get("metrics") or {}
+        service_time = metrics.get("service_time")
+        if not worker_name or service_time in (None, ""):
+            continue
+        try:
+            value = float(service_time)
+        except (TypeError, ValueError):
+            continue
+        if value < 0:
+            continue
+        grouped.setdefault(worker_name, []).append(value)
+
+    stats: dict[str, dict[str, float]] = {}
+    for worker_name, values in grouped.items():
+        if values:
+            stats[worker_name] = {
+                "avg_service_time": sum(values) / len(values),
+                "sample_count": float(len(values)),
+            }
+    return stats
+
+
 def choose_target() -> dict:
     routing_policy = get_current_routing_policy()
+    runtime_stats = get_recent_worker_service_stats()
+    default_service_time = 1.0
+
     if routing_policy == "round_robin":
         counter = r.incr("mini-dc-api:round-robin-index") - 1
         target = WORKER_QUEUES[counter % len(WORKER_QUEUES)]
+        queue_length = get_queue_length(target["queue_name"])
+        busy_value = get_busy_value(target["busy_key"])
         return {
             **target,
-            "queue_length": get_queue_length(target["queue_name"]),
-            "busy_value": get_busy_value(target["busy_key"]),
-            "estimated_load": get_queue_length(target["queue_name"]) + get_busy_value(target["busy_key"]),
+            "queue_length": queue_length,
+            "busy_value": busy_value,
+            "estimated_load": queue_length,
+            "estimated_completion_seconds": (queue_length + busy_value + 1) * runtime_stats.get(target["worker_name"], {}).get("avg_service_time", default_service_time),
             "policy": routing_policy,
         }
 
     candidates = []
     for worker in WORKER_QUEUES:
         queue_length = get_queue_length(worker["queue_name"])
-        busy_value = get_busy_value(worker["busy_key"]) if routing_policy in {"state_aware", "adaptive"} else get_busy_value(worker["busy_key"]) if routing_policy == "power_of_two" else 0
+        busy_value = get_busy_value(worker["busy_key"])
+        avg_service_time = runtime_stats.get(worker["worker_name"], {}).get("avg_service_time", default_service_time)
         estimated_load = queue_length + busy_value
+        estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
         candidates.append(
             {
                 **worker,
                 "queue_length": queue_length,
                 "busy_value": busy_value,
                 "estimated_load": estimated_load,
+                "avg_service_time": avg_service_time,
+                "estimated_completion_seconds": estimated_completion_seconds,
             }
         )
+
+    if routing_policy == "random":
+        target = random.choice(candidates)
+        return {**target, "policy": routing_policy}
 
     if routing_policy == "power_of_two":
         sampled = random.sample(candidates, k=min(2, len(candidates)))
         sampled.sort(key=lambda item: (item["estimated_load"], item["queue_length"], item["worker_name"]))
         return {**sampled[0], "policy": routing_policy}
 
-    if routing_policy in {"shortest_queue", "state_aware", "adaptive"}:
-        candidates.sort(key=lambda item: (item["estimated_load"], item["queue_length"], item["worker_name"]))
+    if routing_policy == "shortest_queue":
+        candidates.sort(key=lambda item: (item["queue_length"], item["busy_value"], item["worker_name"]))
         return {**candidates[0], "policy": routing_policy}
+
+    if routing_policy in {"state_aware", "adaptive"}:
+        candidates.sort(key=lambda item: (item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
+        selected = {**candidates[0], "policy": routing_policy}
+        if routing_policy == "adaptive":
+            selected["policy_detail"] = "queue_length_plus_recent_runtime"
+        return selected
 
     raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {routing_policy}")
 
@@ -674,7 +723,7 @@ def ensure_experiments_runtime_available() -> None:
 
 
 class ExperimentCreateRequest(BaseModel):
-    policy: Literal["shortest_queue", "round_robin", "power_of_two", "state_aware", "adaptive"]
+    policy: Literal["round_robin", "random", "shortest_queue", "adaptive", "power_of_two", "state_aware"]
     workload_file: str
     run_id: str
     notes: str = ""

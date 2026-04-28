@@ -108,7 +108,9 @@
             <label for="experiment-policy">Policy</label>
             <select id="experiment-policy">
               <option value="round_robin">round_robin</option>
-              <option value="state_aware">state_aware</option>
+              <option value="random">random</option>
+              <option value="shortest_queue">shortest_queue</option>
+              <option value="adaptive">adaptive</option>
             </select>
           </div>
           <div>
@@ -117,6 +119,7 @@
               <option value="experiments/workloads/light-compute.json">light-compute</option>
               <option value="experiments/workloads/heavy-compute.json">heavy-compute</option>
               <option value="experiments/workloads/mixed-real.json">mixed-real</option>
+              <option value="experiments/workloads/queue-stress.json">queue-stress</option>
             </select>
           </div>
         </div>
