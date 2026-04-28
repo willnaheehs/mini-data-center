@@ -71,6 +71,8 @@
     .banner { border: 1px solid rgba(81, 207, 102, 0.25); background: rgba(81, 207, 102, 0.08); color: #b2f2bb; padding: 10px 12px; border-radius: 12px; display: none; }
     .banner.show { display: block; }
     .empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 14px; text-align: center; }
+    .scroll-region { max-height: 520px; overflow-y: auto; padding-right: 4px; min-height: 0; }
+    .scroll-region.compact { max-height: 420px; }
   </style>
 </head>
 <body>
@@ -102,7 +104,7 @@
           <button id="refresh-cluster-btn" class="ghost" style="max-width:180px;">Refresh cluster</button>
         </div>
         <div id="cluster-metrics" class="metric-grid"></div>
-        <div id="workers-panel" class="workers-grid"></div>
+        <div id="workers-panel" class="workers-grid scroll-region compact"></div>
       </section>
 
       <section class="card stack">
@@ -191,19 +193,21 @@
           </div>
         </div>
 
-        <div id="job-overview" class="detail-grid"></div>
-        <div id="result-summary" class="detail"></div>
-        <div id="lifecycle" class="lifecycle"></div>
-        <div id="artifact-links" class="artifact-list"></div>
+        <div class="scroll-region">
+          <div id="job-overview" class="detail-grid"></div>
+          <div id="result-summary" class="detail"></div>
+          <div id="lifecycle" class="lifecycle"></div>
+          <div id="artifact-links" class="artifact-list"></div>
 
-        <details>
-          <summary>View raw status JSON</summary>
-          <pre id="status-output">Waiting for status...</pre>
-        </details>
-        <details>
-          <summary>View raw result JSON</summary>
-          <pre id="result-output">Waiting for result...</pre>
-        </details>
+          <details>
+            <summary>View raw status JSON</summary>
+            <pre id="status-output">Waiting for status...</pre>
+          </details>
+          <details>
+            <summary>View raw result JSON</summary>
+            <pre id="result-output">Waiting for result...</pre>
+          </details>
+        </div>
       </section>
     </div>
   </div>

@@ -75,6 +75,8 @@
     .artifact-list { display: grid; gap: 8px; margin-top: 10px; }
     .artifact-link { color: #a5d8ff; text-decoration: none; }
     .artifact-link:hover { text-decoration: underline; }
+    .scroll-region { max-height: 520px; overflow-y: auto; padding-right: 4px; min-height: 0; }
+    .scroll-region.compact { max-height: 420px; }
   </style>
 </head>
 <body>
@@ -157,15 +159,17 @@
           <h2>Selected Experiment</h2>
           <p id="experiment-summary" class="small">Select a run to inspect it.</p>
         </div>
-        <div id="experiment-overview" class="detail-grid"></div>
-        <div>
-          <h3>Run Artifacts</h3>
-          <div id="experiment-artifacts" class="artifact-list"><div class="empty">Select a run to view files.</div></div>
+        <div class="scroll-region">
+          <div id="experiment-overview" class="detail-grid"></div>
+          <div>
+            <h3>Run Artifacts</h3>
+            <div id="experiment-artifacts" class="artifact-list"><div class="empty">Select a run to view files.</div></div>
+          </div>
+          <details>
+            <summary>View experiment detail JSON</summary>
+            <pre id="experiment-detail-output">Select or create a run.</pre>
+          </details>
         </div>
-        <details>
-          <summary>View experiment detail JSON</summary>
-          <pre id="experiment-detail-output">Select or create a run.</pre>
-        </details>
       </section>
     </div>
 
@@ -174,7 +178,7 @@
         <div>
           <h2>Workers</h2>
         </div>
-        <div id="workers-panel" class="workers-grid"></div>
+        <div id="workers-panel" class="workers-grid scroll-region compact"></div>
       </section>
 
       <section class="card stack">
@@ -183,7 +187,7 @@
             <h2>Live Routing Visual</h2>
           </div>
         </div>
-        <div id="live-visual" class="visual-lanes"></div>
+        <div id="live-visual" class="visual-lanes scroll-region compact"></div>
       </section>
     </div>
   </div>
