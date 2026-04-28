@@ -784,6 +784,17 @@ class ExperimentCreateRequest(BaseModel):
     submit_interval_ms: int = 0
 
 
+def validate_run_id(run_id: str) -> str:
+    cleaned = run_id.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if "/" in cleaned or "\\" in cleaned:
+        raise HTTPException(status_code=400, detail="run_id cannot contain slashes; use dashes or underscores instead")
+    if cleaned in {".", ".."} or ".." in cleaned:
+        raise HTTPException(status_code=400, detail="run_id cannot contain path traversal segments")
+    return cleaned
+
+
 def run_experiment_script(script_name: str, *args: str) -> tuple[int, str, str]:
     import subprocess
 
@@ -868,20 +879,21 @@ def get_experiment_file(run_id: str, file_path: str):
 
 @app.post("/experiments")
 def create_experiment(request: ExperimentCreateRequest) -> dict:
+    run_id = validate_run_id(request.run_id)
     code, stdout, stderr = run_experiment_script(
         "create_run.py",
         "--policy", request.policy,
         "--workload-file", request.workload_file,
-        "--run-id", request.run_id,
+        "--run-id", run_id,
         "--notes", request.notes,
         "--job-count", str(request.job_count),
         "--submit-interval-ms", str(request.submit_interval_ms),
     )
     if code != 0:
         raise HTTPException(status_code=400, detail=stderr or stdout or "failed to create experiment")
-    manifest = read_experiment_manifest(request.run_id)
+    manifest = read_experiment_manifest(run_id)
     return {
-        "run_id": request.run_id,
+        "run_id": run_id,
         "run_status": manifest.get("run_status"),
         "run_dir": stdout,
     }
@@ -889,6 +901,7 @@ def create_experiment(request: ExperimentCreateRequest) -> dict:
 
 @app.post("/experiments/{run_id}/start")
 def start_experiment(run_id: str) -> dict:
+    run_id = validate_run_id(run_id)
     code, stdout, stderr = run_experiment_script("start_run.py", "--run-id", run_id)
     if code != 0:
         raise HTTPException(status_code=400, detail=stderr or stdout or "failed to start experiment")

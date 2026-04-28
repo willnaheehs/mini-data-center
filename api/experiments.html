@@ -418,12 +418,25 @@
       renderExperimentArtifacts(manifest.run_id || data?.run_id || '', data?.artifacts || {});
     }
 
+    function validateRunIdInput(runId) {
+      if (!runId) {
+        throw new Error('Run ID is required');
+      }
+      if (runId.includes('/') || runId.includes('\\')) {
+        throw new Error('Run ID cannot contain slashes. Use dashes or underscores instead.');
+      }
+      if (runId.includes('..')) {
+        throw new Error('Run ID cannot contain .. segments.');
+      }
+    }
+
     async function loadExperiment(runId, syncInput = true) {
+      validateRunIdInput(runId);
       currentExperimentRunId = runId;
       if (syncInput) {
         experimentRunId.value = runId;
       }
-      const res = await fetch(`/experiments/${runId}`);
+      const res = await fetch(`/experiments/${encodeURIComponent(runId)}`);
       const data = await res.json();
       experimentDetailOutput.textContent = pretty(data);
       if (!res.ok) throw new Error(pretty(data));
@@ -444,6 +457,7 @@
         alert('Run ID is required');
         return;
       }
+      validateRunIdInput(payload.run_id);
       if (payload.job_count < 1) {
         alert('Number of jobs must be at least 1');
         return;
@@ -470,7 +484,8 @@
         alert('Set or select a run ID first');
         return;
       }
-      const res = await fetch(`/experiments/${runId}/start`, { method: 'POST' });
+      validateRunIdInput(runId);
+      const res = await fetch(`/experiments/${encodeURIComponent(runId)}/start`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(pretty(data));
       showBanner(`Started experiment ${runId}`, 'ok');
