@@ -279,6 +279,28 @@ def get_recent_worker_service_stats(limit: int = 40) -> dict[str, dict[str, floa
     return stats
 
 
+def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, float]], default_service_time: float) -> dict:
+    queue_length = get_queue_length(worker["queue_name"])
+    busy_value = get_busy_value(worker["busy_key"])
+    cpu_temperature_celsius = get_temperature_value(worker.get("temp_key", ""))
+    avg_service_time = runtime_stats.get(worker["worker_name"], {}).get("avg_service_time", default_service_time)
+    estimated_load = queue_length + busy_value
+    estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
+    temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
+    return {
+        **worker,
+        "queue_length": queue_length,
+        "busy_value": busy_value,
+        "estimated_load": estimated_load,
+        "avg_service_time": avg_service_time,
+        "estimated_completion_seconds": estimated_completion_seconds,
+        "cpu_temperature_celsius": cpu_temperature_celsius,
+        "temperature_penalty_seconds": temp_penalty,
+        "temperature_state": temperature_state(cpu_temperature_celsius),
+        "adaptive_score": estimated_completion_seconds + temp_penalty,
+    }
+
+
 def choose_target() -> dict:
     """Choose a worker using the active routing policy.
 
@@ -291,50 +313,10 @@ def choose_target() -> dict:
 
     if routing_policy == "round_robin":
         counter = r.incr("mini-dc-api:round-robin-index") - 1
-        target = WORKER_QUEUES[counter % len(WORKER_QUEUES)]
-        queue_length = get_queue_length(target["queue_name"])
-        busy_value = get_busy_value(target["busy_key"])
-        cpu_temperature_celsius = get_temperature_value(target.get("temp_key", ""))
-        avg_service_time = runtime_stats.get(target["worker_name"], {}).get("avg_service_time", default_service_time)
-        estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
-        temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
-        return {
-            **target,
-            "queue_length": queue_length,
-            "busy_value": busy_value,
-            "estimated_load": queue_length,
-            "avg_service_time": avg_service_time,
-            "estimated_completion_seconds": estimated_completion_seconds,
-            "cpu_temperature_celsius": cpu_temperature_celsius,
-            "temperature_penalty_seconds": temp_penalty,
-            "temperature_state": temperature_state(cpu_temperature_celsius),
-            "adaptive_score": estimated_completion_seconds + temp_penalty,
-            "policy": routing_policy,
-        }
+        target = build_worker_candidate(WORKER_QUEUES[counter % len(WORKER_QUEUES)], runtime_stats, default_service_time)
+        return {**target, "policy": routing_policy}
 
-    candidates = []
-    for worker in WORKER_QUEUES:
-        queue_length = get_queue_length(worker["queue_name"])
-        busy_value = get_busy_value(worker["busy_key"])
-        cpu_temperature_celsius = get_temperature_value(worker.get("temp_key", ""))
-        avg_service_time = runtime_stats.get(worker["worker_name"], {}).get("avg_service_time", default_service_time)
-        estimated_load = queue_length + busy_value
-        estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
-        temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
-        candidates.append(
-            {
-                **worker,
-                "queue_length": queue_length,
-                "busy_value": busy_value,
-                "estimated_load": estimated_load,
-                "avg_service_time": avg_service_time,
-                "estimated_completion_seconds": estimated_completion_seconds,
-                "cpu_temperature_celsius": cpu_temperature_celsius,
-                "temperature_penalty_seconds": temp_penalty,
-                "temperature_state": temperature_state(cpu_temperature_celsius),
-                "adaptive_score": estimated_completion_seconds + temp_penalty,
-            }
-        )
+    candidates = [build_worker_candidate(worker, runtime_stats, default_service_time) for worker in WORKER_QUEUES]
 
     if routing_policy == "random":
         target = random.choice(candidates)
