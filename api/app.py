@@ -280,6 +280,11 @@ def get_recent_worker_service_stats(limit: int = 40) -> dict[str, dict[str, floa
 
 
 def choose_target() -> dict:
+    """Choose a worker using the active routing policy.
+
+    adaptive = estimated completion time + CPU temperature penalty
+    state_aware = estimated completion time without thermal penalty
+    """
     routing_policy = get_current_routing_policy()
     runtime_stats = get_recent_worker_service_stats()
     default_service_time = 1.0
