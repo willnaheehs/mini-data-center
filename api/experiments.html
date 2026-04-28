@@ -399,9 +399,11 @@
       renderExperimentArtifacts(manifest.run_id || data?.run_id || '', data?.artifacts || {});
     }
 
-    async function loadExperiment(runId) {
+    async function loadExperiment(runId, syncInput = true) {
       currentExperimentRunId = runId;
-      experimentRunId.value = runId;
+      if (syncInput) {
+        experimentRunId.value = runId;
+      }
       const res = await fetch(`/experiments/${runId}`);
       const data = await res.json();
       experimentDetailOutput.textContent = pretty(data);
@@ -453,7 +455,7 @@
       await fetchClusterStatus();
       await fetchExperiments();
       if (currentExperimentRunId) {
-        await loadExperiment(currentExperimentRunId);
+        await loadExperiment(currentExperimentRunId, false);
       }
     }
 
