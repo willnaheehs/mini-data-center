@@ -27,7 +27,10 @@ WORKER_NAME = os.getenv("WORKER_NAME", os.uname().nodename)
 NODE_NAME = os.getenv("NODE_NAME", os.uname().nodename)
 RESULTS_PATH = os.getenv("RESULTS_PATH", "/data/job_results.csv")
 BUSY_KEY = os.getenv("BUSY_KEY", f"busy-{WORKER_NAME}")
+TEMP_KEY = os.getenv("TEMP_KEY", f"cpu-temp-{WORKER_NAME}")
 BUSY_KEY_TTL_SEC = int(os.getenv("BUSY_KEY_TTL_SEC", "300"))
+TEMP_KEY_TTL_SEC = int(os.getenv("TEMP_KEY_TTL_SEC", "120"))
+CPU_TEMP_PROM_FILE = os.getenv("CPU_TEMP_PROM_FILE", "")
 METRICS_PORT = int(os.getenv("METRICS_PORT", "8002"))
 JOB_STATUS_PREFIX = os.getenv("JOB_STATUS_PREFIX", "job-status:")
 JOB_RESULT_PREFIX = os.getenv("JOB_RESULT_PREFIX", "job-result:")
@@ -53,6 +56,7 @@ CSV_FIELDS = [
     "total_time",
     "status",
     "result_summary",
+    "cpu_temperature_celsius",
 ]
 
 worker_jobs_processed_total = Counter(
@@ -112,6 +116,12 @@ worker_compute_size = Gauge(
     ["worker_name", "node_name", "task"],
 )
 
+worker_cpu_temperature_celsius = Gauge(
+    "mini_dc_worker_cpu_temperature_celsius",
+    "Latest observed CPU package temperature in Celsius for this worker host",
+    ["worker_name", "node_name"],
+)
+
 
 def parse_iso(ts: str) -> datetime:
     return datetime.fromisoformat(ts)
@@ -145,6 +155,54 @@ def redis_get_json(key: str):
 def redis_set_json(key: str, payload: dict):
     r.set(key, json.dumps(payload))
     r.expire(key, JOB_TTL_SEC)
+
+
+def read_cpu_temperature_celsius() -> float | None:
+    if not CPU_TEMP_PROM_FILE:
+        return None
+    path = Path(CPU_TEMP_PROM_FILE)
+    if not path.exists():
+        return None
+    try:
+        for line in path.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            _, value = stripped.rsplit(' ', 1)
+            return float(value)
+    except Exception as exc:
+        print(f"Worker {WORKER_NAME} failed to read CPU temperature: {exc}")
+    return None
+
+
+def publish_cpu_temperature() -> float | None:
+    value = read_cpu_temperature_celsius()
+    if value is None:
+        return None
+    r.set(TEMP_KEY, f"{value:.2f}", ex=TEMP_KEY_TTL_SEC)
+    worker_cpu_temperature_celsius.labels(worker_name=WORKER_NAME, node_name=NODE_NAME).set(value)
+    return value
+
+
+class TemperatureHeartbeat:
+    def __init__(self, interval_seconds: int | None = None):
+        self.interval_seconds = interval_seconds or max(10, TEMP_KEY_TTL_SEC // 3)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.wait(self.interval_seconds):
+            try:
+                publish_cpu_temperature()
+            except Exception as exc:
+                print(f"Worker {WORKER_NAME} failed to refresh temperature heartbeat: {exc}")
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=1)
 
 
 def set_worker_busy(is_busy: bool):
@@ -245,6 +303,8 @@ def build_result_row(job: dict, started_at: datetime, finished_at: datetime, sta
         except Exception:
             pass
 
+    cpu_temperature_celsius = publish_cpu_temperature()
+
     return {
         "job_id": job.get("job_id", "unknown"),
         "job_type": job.get("job_type", "unknown"),
@@ -262,6 +322,7 @@ def build_result_row(job: dict, started_at: datetime, finished_at: datetime, sta
         "total_time": total_time,
         "status": status,
         "result_summary": result_summary,
+        "cpu_temperature_celsius": cpu_temperature_celsius if cpu_temperature_celsius is not None else "",
     }
 
 
@@ -283,6 +344,7 @@ def build_result_payload(job: dict, row: dict, extra_result: dict | None = None)
             "wait_time": row["wait_time"],
             "service_time": row["service_time"],
             "total_time": row["total_time"],
+            "cpu_temperature_celsius": row.get("cpu_temperature_celsius"),
         },
         "metadata": job.get("metadata", {}),
         "artifacts": job.get("artifacts", {}),
@@ -645,8 +707,11 @@ def main():
     start_http_server(METRICS_PORT)
     ensure_results_file()
     set_worker_busy(False)
+    publish_cpu_temperature()
+    temperature_heartbeat = TemperatureHeartbeat()
+    temperature_heartbeat.start()
     print(f"Worker {WORKER_NAME} metrics listening on port {METRICS_PORT}")
-    print(f"Worker {WORKER_NAME} listening on queue '{QUEUE_NAME}' with busy key '{BUSY_KEY}'")
+    print(f"Worker {WORKER_NAME} listening on queue '{QUEUE_NAME}' with busy key '{BUSY_KEY}' and temp key '{TEMP_KEY}'")
 
     while True:
         _, raw_job = r.brpop(QUEUE_NAME)

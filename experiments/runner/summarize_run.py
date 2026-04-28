@@ -42,7 +42,7 @@ def main() -> None:
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
     runner_totals = []
-    worker_totals, waits, services = [], [], []
+    worker_totals, waits, services, cpu_temps = [], [], [], []
     jobs_per_worker = {}
     completed = failed = 0
     negative_metric_warnings = []
@@ -66,10 +66,13 @@ def main() -> None:
             "worker_total_time": metric_value(metrics, "total_time", "total_seconds"),
             "wait_time": metric_value(metrics, "wait_time", "wait_seconds"),
             "service_time": metric_value(metrics, "service_time", "service_seconds"),
+            "cpu_temperature_celsius": metric_value(metrics, "cpu_temperature_celsius"),
         }
 
         if extracted["service_time"] is not None:
             services.append(extracted["service_time"])
+        if extracted["cpu_temperature_celsius"] is not None:
+            cpu_temps.append(extracted["cpu_temperature_celsius"])
         for key, bucket in [("worker_total_time", worker_totals), ("wait_time", waits)]:
             value = extracted[key]
             if value is not None:
@@ -100,6 +103,8 @@ def main() -> None:
         summary["worker_total_time"] = summarize_series(positive_worker_totals)
     if positive_waits:
         summary["wait_time"] = summarize_series(positive_waits)
+    if cpu_temps:
+        summary["cpu_temperature_celsius"] = summarize_series(cpu_temps)
 
     if negative_metric_warnings:
         summary["warnings"] = {
@@ -114,7 +119,7 @@ def main() -> None:
         writer.writerow(["job_count", summary["job_count"]])
         writer.writerow(["completed_count", summary["completed_count"]])
         writer.writerow(["failed_count", summary["failed_count"]])
-        for metric in ["runner_observed_total_time", "service_time", "worker_total_time", "wait_time"]:
+        for metric in ["runner_observed_total_time", "service_time", "worker_total_time", "wait_time", "cpu_temperature_celsius"]:
             if metric in summary:
                 writer.writerow([f"{metric}_avg", summary[metric]["avg"]])
                 writer.writerow([f"{metric}_p95", summary[metric]["p95"]])

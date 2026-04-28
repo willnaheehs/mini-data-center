@@ -28,6 +28,10 @@ spec:
               value: "node3-worker"
             - name: BUSY_KEY
               value: "busy-node3"
+            - name: TEMP_KEY
+              value: "cpu-temp-node3-worker"
+            - name: CPU_TEMP_PROM_FILE
+              value: "/host/node_exporter_textfile/mini_dc_cpu_temp.prom"
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -59,8 +63,15 @@ spec:
           volumeMounts:
             - name: job-logs
               mountPath: /data
+            - name: node-exporter-textfile
+              mountPath: /host/node_exporter_textfile
+              readOnly: true
       volumes:
         - name: job-logs
           hostPath:
             path: /tmp/mini-dc-logs
+            type: DirectoryOrCreate
+        - name: node-exporter-textfile
+          hostPath:
+            path: /var/lib/node_exporter/textfile_collector
             type: DirectoryOrCreate

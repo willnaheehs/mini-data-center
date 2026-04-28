@@ -30,11 +30,13 @@ WORKER_QUEUES = [
         "worker_name": os.getenv("WORKER_NODE2_NAME", "node2-worker"),
         "queue_name": os.getenv("QUEUE_NODE2", "jobs-node2"),
         "busy_key": os.getenv("BUSY_KEY_NODE2", "busy-node2"),
+        "temp_key": os.getenv("TEMP_KEY_NODE2", "cpu-temp-node2-worker"),
     },
     {
         "worker_name": os.getenv("WORKER_NODE3_NAME", "node3-worker"),
         "queue_name": os.getenv("QUEUE_NODE3", "jobs-node3"),
         "busy_key": os.getenv("BUSY_KEY_NODE3", "busy-node3"),
+        "temp_key": os.getenv("TEMP_KEY_NODE3", "cpu-temp-node3-worker"),
     },
 ]
 SUPPORTED_ROUTING_POLICIES = ["round_robin", "random", "shortest_queue", "adaptive", "power_of_two", "state_aware"]
@@ -182,20 +184,64 @@ def get_busy_value(busy_key: str) -> int:
         return 0
 
 
+def get_temperature_value(temp_key: str) -> float | None:
+    if not temp_key:
+        return None
+    raw = r.get(temp_key)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def temperature_penalty_seconds(temp_celsius: float | None) -> float:
+    if temp_celsius is None:
+        return 0.0
+    mild = max(0.0, temp_celsius - 60.0) * 0.12
+    moderate = max(0.0, temp_celsius - 70.0) * 0.25
+    severe = max(0.0, temp_celsius - 80.0) * 0.75
+    return mild + moderate + severe
+
+
+def temperature_state(temp_celsius: float | None) -> str:
+    if temp_celsius is None:
+        return "unknown"
+    if temp_celsius >= 80:
+        return "hot"
+    if temp_celsius >= 70:
+        return "warm"
+    return "cool"
+
+
 def get_cluster_snapshot() -> dict:
+    runtime_stats = get_recent_worker_service_stats()
     workers = []
     for worker in WORKER_QUEUES:
         queue_length = get_queue_length(worker["queue_name"])
         busy_value = get_busy_value(worker["busy_key"])
+        cpu_temperature_celsius = get_temperature_value(worker.get("temp_key", ""))
+        avg_service_time = runtime_stats.get(worker["worker_name"], {}).get("avg_service_time", 1.0)
+        estimated_load = queue_length + busy_value
+        estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
+        temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
         workers.append(
             {
                 "worker_name": worker["worker_name"],
                 "queue_name": worker["queue_name"],
                 "busy_key": worker["busy_key"],
+                "temp_key": worker.get("temp_key", ""),
                 "queue_length": queue_length,
                 "busy": bool(busy_value),
                 "busy_value": busy_value,
-                "estimated_load": queue_length + busy_value,
+                "estimated_load": estimated_load,
+                "avg_service_time": avg_service_time,
+                "estimated_completion_seconds": estimated_completion_seconds,
+                "cpu_temperature_celsius": cpu_temperature_celsius,
+                "temperature_penalty_seconds": temp_penalty,
+                "temperature_state": temperature_state(cpu_temperature_celsius),
+                "adaptive_score": estimated_completion_seconds + temp_penalty,
             }
         )
     return {
@@ -243,12 +289,21 @@ def choose_target() -> dict:
         target = WORKER_QUEUES[counter % len(WORKER_QUEUES)]
         queue_length = get_queue_length(target["queue_name"])
         busy_value = get_busy_value(target["busy_key"])
+        cpu_temperature_celsius = get_temperature_value(target.get("temp_key", ""))
+        avg_service_time = runtime_stats.get(target["worker_name"], {}).get("avg_service_time", default_service_time)
+        estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
+        temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
         return {
             **target,
             "queue_length": queue_length,
             "busy_value": busy_value,
             "estimated_load": queue_length,
-            "estimated_completion_seconds": (queue_length + busy_value + 1) * runtime_stats.get(target["worker_name"], {}).get("avg_service_time", default_service_time),
+            "avg_service_time": avg_service_time,
+            "estimated_completion_seconds": estimated_completion_seconds,
+            "cpu_temperature_celsius": cpu_temperature_celsius,
+            "temperature_penalty_seconds": temp_penalty,
+            "temperature_state": temperature_state(cpu_temperature_celsius),
+            "adaptive_score": estimated_completion_seconds + temp_penalty,
             "policy": routing_policy,
         }
 
@@ -256,9 +311,11 @@ def choose_target() -> dict:
     for worker in WORKER_QUEUES:
         queue_length = get_queue_length(worker["queue_name"])
         busy_value = get_busy_value(worker["busy_key"])
+        cpu_temperature_celsius = get_temperature_value(worker.get("temp_key", ""))
         avg_service_time = runtime_stats.get(worker["worker_name"], {}).get("avg_service_time", default_service_time)
         estimated_load = queue_length + busy_value
         estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
+        temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
         candidates.append(
             {
                 **worker,
@@ -267,6 +324,10 @@ def choose_target() -> dict:
                 "estimated_load": estimated_load,
                 "avg_service_time": avg_service_time,
                 "estimated_completion_seconds": estimated_completion_seconds,
+                "cpu_temperature_celsius": cpu_temperature_celsius,
+                "temperature_penalty_seconds": temp_penalty,
+                "temperature_state": temperature_state(cpu_temperature_celsius),
+                "adaptive_score": estimated_completion_seconds + temp_penalty,
             }
         )
 
@@ -283,11 +344,16 @@ def choose_target() -> dict:
         candidates.sort(key=lambda item: (item["queue_length"], item["busy_value"], item["worker_name"]))
         return {**candidates[0], "policy": routing_policy}
 
-    if routing_policy in {"state_aware", "adaptive"}:
+    if routing_policy == "state_aware":
         candidates.sort(key=lambda item: (item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
         selected = {**candidates[0], "policy": routing_policy}
-        if routing_policy == "adaptive":
-            selected["policy_detail"] = "queue_length_plus_recent_runtime"
+        selected["policy_detail"] = "queue_length_busy_and_recent_runtime"
+        return selected
+
+    if routing_policy == "adaptive":
+        candidates.sort(key=lambda item: (item["adaptive_score"], item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
+        selected = {**candidates[0], "policy": routing_policy}
+        selected["policy_detail"] = "estimated_completion_plus_temperature_penalty"
         return selected
 
     raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {routing_policy}")

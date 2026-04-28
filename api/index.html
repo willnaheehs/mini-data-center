@@ -316,6 +316,8 @@
           <div class="small">Queue: ${worker.queue_name}</div>
           <div class="small">Queue depth: ${worker.queue_length}</div>
           <div class="small">Estimated load: ${worker.estimated_load}</div>
+          <div class="small">CPU temp: ${worker.cpu_temperature_celsius ?? 'n/a'}${worker.cpu_temperature_celsius ? ' °C' : ''} (${worker.temperature_state || 'unknown'})</div>
+          <div class="small">Adaptive score: ${worker.adaptive_score ?? 'n/a'}</div>
           <div class="small">Busy flag: ${worker.busy_value}</div>
           <div class="small" style="margin-top:8px; color:#dbe4ff;">Queue load</div>
           <div class="queue-bar large"><div class="queue-fill large" style="width:${width}%"></div></div>
