@@ -1,7 +1,9 @@
+import hmac
 import json
 import mimetypes
 import os
 import random
+import shutil
 import sys
 import time
 import uuid
@@ -10,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import redis
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -53,6 +55,8 @@ MAX_INPUT_FILE_BYTES = int(os.getenv("MAX_INPUT_FILE_BYTES", str(5 * 1024 * 1024
 FILE_PROCESS_MAX_BYTES = int(os.getenv("FILE_PROCESS_MAX_BYTES", str(5 * 1024 * 1024)))
 RECENT_JOBS_LIMIT = int(os.getenv("RECENT_JOBS_LIMIT", "20"))
 MINI_DC_RUNS_ROOT = Path(os.getenv("MINI_DC_RUNS_ROOT", "/data/experiments/runs"))
+API_AUTH_TOKEN = os.getenv("MINI_DC_API_AUTH_TOKEN", "")
+API_AUTH_HEADER = "x-api-key"
 
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 app = FastAPI(title="mini-data-center api", version="0.3.0")
@@ -116,6 +120,18 @@ class FileUploadResponse(BaseModel):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def auth_enabled() -> bool:
+    return bool(API_AUTH_TOKEN)
+
+
+def require_api_auth(request: Request) -> None:
+    if not auth_enabled():
+        return
+    provided = request.headers.get(API_AUTH_HEADER, "") or request.query_params.get("api_key", "")
+    if not provided or not hmac.compare_digest(provided, API_AUTH_TOKEN):
+        raise HTTPException(status_code=401, detail=f"missing or invalid {API_AUTH_HEADER} header")
 
 
 def status_key(job_id: str) -> str:
@@ -503,7 +519,8 @@ def healthz() -> dict:
 
 
 @app.get("/cluster/status")
-def cluster_status() -> dict:
+def cluster_status(request: Request) -> dict:
+    require_api_auth(request)
     return {
         **get_cluster_snapshot(),
         "recent_jobs": get_recent_jobs(),
@@ -512,7 +529,8 @@ def cluster_status() -> dict:
 
 
 @app.get("/routing-policy")
-def get_routing_policy() -> dict:
+def get_routing_policy(request: Request) -> dict:
+    require_api_auth(request)
     return {
         "policy": get_current_routing_policy(),
         "supported": SUPPORTED_ROUTING_POLICIES,
@@ -520,8 +538,9 @@ def get_routing_policy() -> dict:
 
 
 @app.post("/routing-policy")
-def update_routing_policy(request: RoutingPolicyUpdateRequest) -> dict:
-    policy = set_current_routing_policy(request.policy)
+def update_routing_policy(request_data: RoutingPolicyUpdateRequest, request: Request) -> dict:
+    require_api_auth(request)
+    policy = set_current_routing_policy(request_data.policy)
     return {
         "policy": policy,
         "supported": SUPPORTED_ROUTING_POLICIES,
@@ -530,8 +549,9 @@ def update_routing_policy(request: RoutingPolicyUpdateRequest) -> dict:
 
 
 @app.post("/jobs", response_model=JobCreateResponse)
-def create_job(request: JobCreateRequest) -> JobCreateResponse:
-    job = normalize_job(request)
+def create_job(request_data: JobCreateRequest, request: Request) -> JobCreateResponse:
+    require_api_auth(request)
+    job = normalize_job(request_data)
     store_initial_job_state(job)
     r.lpush(job["target_queue"], json.dumps(job))
     status_url, result_url = build_status_urls(job["job_id"])
@@ -540,11 +560,13 @@ def create_job(request: JobCreateRequest) -> JobCreateResponse:
 
 @app.post("/jobs/file", response_model=JobCreateResponse)
 async def create_file_job(
+    request: Request,
     client_id: Optional[str] = Form(None),
     metadata_json: str = Form("{}"),
     operation: str = Form("text_summary"),
     input_file: UploadFile = File(...),
 ) -> JobCreateResponse:
+    require_api_auth(request)
     ensure_upload_dir()
 
     try:
@@ -605,12 +627,14 @@ async def create_file_job(
 
 @app.post("/jobs/python", response_model=JobCreateResponse)
 async def create_python_job(
+    request: Request,
     client_id: Optional[str] = Form(None),
     metadata_json: str = Form("{}"),
     timeout_seconds: int = Form(30),
     script: UploadFile = File(...),
     input_files: list[UploadFile] | None = File(None),
 ) -> JobCreateResponse:
+    require_api_auth(request)
     ensure_upload_dir()
 
     if not (script.filename or "").endswith(".py"):
@@ -678,7 +702,8 @@ async def create_python_job(
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str) -> JobStatusResponse:
+def get_job_status(job_id: str, request: Request) -> JobStatusResponse:
+    require_api_auth(request)
     status_doc = redis_get_json(status_key(job_id))
     if status_doc is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -686,7 +711,8 @@ def get_job_status(job_id: str) -> JobStatusResponse:
 
 
 @app.delete("/jobs/{job_id}")
-def delete_queued_job(job_id: str) -> dict:
+def delete_queued_job(job_id: str, request: Request) -> dict:
+    require_api_auth(request)
     status_doc = redis_get_json(status_key(job_id))
     payload_doc = redis_get_json(payload_key(job_id))
     if status_doc is None or payload_doc is None:
@@ -734,7 +760,8 @@ def delete_queued_job(job_id: str) -> dict:
 
 
 @app.get("/jobs/{job_id}/result")
-def get_job_result(job_id: str) -> dict:
+def get_job_result(job_id: str, request: Request) -> dict:
+    require_api_auth(request)
     result_doc = redis_get_json(result_key(job_id))
     if result_doc is None:
         status_doc = redis_get_json(status_key(job_id))
@@ -828,7 +855,8 @@ def list_experiment_artifacts(run_id: str) -> dict:
 
 
 @app.get("/experiments")
-def list_experiments() -> dict:
+def list_experiments(request: Request) -> dict:
+    require_api_auth(request)
     EXPERIMENTS_ROOT.mkdir(parents=True, exist_ok=True)
     runs = []
     for manifest in EXPERIMENTS_ROOT.glob('*/manifest.json'):
@@ -851,7 +879,8 @@ def list_experiments() -> dict:
 
 
 @app.get("/experiments/{run_id}")
-def get_experiment(run_id: str) -> dict:
+def get_experiment(run_id: str, request: Request) -> dict:
+    require_api_auth(request)
     manifest = read_experiment_manifest(run_id)
     run_dir = EXPERIMENTS_ROOT / run_id
     summary_path = run_dir / "metrics" / "summary.json"
@@ -865,7 +894,8 @@ def get_experiment(run_id: str) -> dict:
 
 
 @app.get("/experiments/{run_id}/files/{file_path:path}")
-def get_experiment_file(run_id: str, file_path: str):
+def get_experiment_file(run_id: str, file_path: str, request: Request):
+    require_api_auth(request)
     run_dir = (EXPERIMENTS_ROOT / run_id).resolve()
     file_full_path = (run_dir / file_path).resolve()
     try:
@@ -878,16 +908,17 @@ def get_experiment_file(run_id: str, file_path: str):
 
 
 @app.post("/experiments")
-def create_experiment(request: ExperimentCreateRequest) -> dict:
-    run_id = validate_run_id(request.run_id)
+def create_experiment(request_data: ExperimentCreateRequest, request: Request) -> dict:
+    require_api_auth(request)
+    run_id = validate_run_id(request_data.run_id)
     code, stdout, stderr = run_experiment_script(
         "create_run.py",
-        "--policy", request.policy,
-        "--workload-file", request.workload_file,
+        "--policy", request_data.policy,
+        "--workload-file", request_data.workload_file,
         "--run-id", run_id,
-        "--notes", request.notes,
-        "--job-count", str(request.job_count),
-        "--submit-interval-ms", str(request.submit_interval_ms),
+        "--notes", request_data.notes,
+        "--job-count", str(request_data.job_count),
+        "--submit-interval-ms", str(request_data.submit_interval_ms),
     )
     if code != 0:
         raise HTTPException(status_code=400, detail=stderr or stdout or "failed to create experiment")
@@ -900,7 +931,8 @@ def create_experiment(request: ExperimentCreateRequest) -> dict:
 
 
 @app.post("/experiments/{run_id}/start")
-def start_experiment(run_id: str) -> dict:
+def start_experiment(run_id: str, request: Request) -> dict:
+    require_api_auth(request)
     run_id = validate_run_id(run_id)
     code, stdout, stderr = run_experiment_script("start_run.py", "--run-id", run_id)
     if code != 0:
@@ -931,8 +963,35 @@ def start_experiment(run_id: str) -> dict:
     }
 
 
+@app.delete("/experiments/{run_id}")
+def delete_experiment(run_id: str, request: Request) -> dict:
+    require_api_auth(request)
+    run_id = validate_run_id(run_id)
+    run_path = (EXPERIMENTS_ROOT / run_id).resolve()
+    try:
+        run_path.relative_to(EXPERIMENTS_ROOT.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid experiment path") from exc
+
+    manifest_path = run_path / "manifest.json"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail=f"experiment run not found: {run_id}")
+
+    trash_root = EXPERIMENTS_ROOT / ".trash"
+    trash_root.mkdir(parents=True, exist_ok=True)
+    archived_name = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{run_id}"
+    archived_path = trash_root / archived_name
+    shutil.move(str(run_path), str(archived_path))
+    return {
+        "run_id": run_id,
+        "status": "archived",
+        "archived_to": str(archived_path),
+    }
+
+
 @app.get("/artifacts/{artifact_path:path}")
-def get_artifact(artifact_path: str):
+def get_artifact(artifact_path: str, request: Request):
+    require_api_auth(request)
     try:
         data = download_bytes(artifact_path)
     except Exception as exc:

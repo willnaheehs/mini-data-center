@@ -36,6 +36,7 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest_file = manifest_path(args.run_id)
+    manifest = read_json(manifest_file)
     run_root = manifest_file.parent
     results_dir = run_root / "results" / "job-results"
     metrics_dir = run_root / "metrics"
@@ -88,6 +89,17 @@ def main() -> None:
         jobs_per_worker[worker] = jobs_per_worker.get(worker, 0) + 1
 
     summary = {
+        "run_id": manifest.get("run_id", args.run_id),
+        "policy": manifest.get("policy"),
+        "policy_applied": manifest.get("policy_applied") or manifest.get("policy"),
+        "workload_file": manifest.get("workload_file"),
+        "requested_job_count": manifest.get("job_count"),
+        "expanded_job_count": manifest.get("expanded_job_count"),
+        "submit_interval_ms_requested": manifest.get("submit_interval_ms"),
+        "submit_interval_ms_effective": manifest.get("submit_interval_ms_effective", manifest.get("submit_interval_ms")),
+        "submission_pattern": manifest.get("submission_pattern"),
+        "timestamp_start": manifest.get("timestamp_start"),
+        "timestamp_end": manifest.get("timestamp_end"),
         "job_count": completed + failed,
         "completed_count": completed,
         "failed_count": failed,
@@ -116,6 +128,17 @@ def main() -> None:
     with (metrics_dir / "summary.csv").open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["metric", "value"])
+        writer.writerow(["run_id", summary["run_id"]])
+        writer.writerow(["policy", summary["policy"]])
+        writer.writerow(["policy_applied", summary["policy_applied"]])
+        writer.writerow(["workload_file", summary["workload_file"]])
+        writer.writerow(["requested_job_count", summary["requested_job_count"]])
+        writer.writerow(["expanded_job_count", summary["expanded_job_count"]])
+        writer.writerow(["submit_interval_ms_requested", summary["submit_interval_ms_requested"]])
+        writer.writerow(["submit_interval_ms_effective", summary["submit_interval_ms_effective"]])
+        writer.writerow(["submission_pattern", summary["submission_pattern"]])
+        writer.writerow(["timestamp_start", summary["timestamp_start"]])
+        writer.writerow(["timestamp_end", summary["timestamp_end"]])
         writer.writerow(["job_count", summary["job_count"]])
         writer.writerow(["completed_count", summary["completed_count"]])
         writer.writerow(["failed_count", summary["failed_count"]])
@@ -126,7 +149,6 @@ def main() -> None:
                 writer.writerow([f"{metric}_max", summary[metric]["max"]])
                 writer.writerow([f"{metric}_min", summary[metric]["min"]])
 
-    manifest = read_json(manifest_file)
     manifest["summary_status"] = "completed"
     write_json(manifest_file, manifest)
     import json

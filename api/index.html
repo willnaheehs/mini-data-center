@@ -91,6 +91,17 @@
 
     <div id="action-banner" class="banner"></div>
 
+    <section class="card stack" style="margin-bottom:20px;">
+      <div>
+        <h2>Remote Access Token</h2>
+        <p class="small">Set the API token once in this browser. It stays in local storage and is sent with API requests.</p>
+      </div>
+      <div class="inline">
+        <input id="api-token" type="password" placeholder="Paste API token" />
+        <button id="save-api-token-btn" class="secondary" style="max-width:180px;">Save token</button>
+      </div>
+    </section>
+
     <div class="grid-wide">
       <section class="card stack">
         <div>
@@ -239,6 +250,8 @@
     const jobOverview = document.getElementById('job-overview');
     const resultSummary = document.getElementById('result-summary');
     const actionBanner = document.getElementById('action-banner');
+    const apiTokenInput = document.getElementById('api-token');
+    const saveApiTokenBtn = document.getElementById('save-api-token-btn');
 
     let trackedJobs = [];
     let currentJobId = '';
@@ -249,6 +262,23 @@
     function pretty(data) { return JSON.stringify(data, null, 2); }
     function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
     function safe(value, fallback='n/a') { return value === undefined || value === null || value === '' ? fallback : value; }
+    function getApiToken() { return localStorage.getItem('miniDcApiToken') || ''; }
+    function saveApiToken() {
+      localStorage.setItem('miniDcApiToken', apiTokenInput.value.trim());
+      showBanner('Saved API token in this browser.', 'ok');
+    }
+    function authFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      const token = getApiToken();
+      if (token) headers.set('x-api-key', token);
+      return fetch(url, { ...options, headers });
+    }
+    function authUrl(url) {
+      const token = getApiToken();
+      if (!token) return url;
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}api_key=${encodeURIComponent(token)}`;
+    }
 
     function setVisibleFields() {
       pythonFields.style.display = jobType.value === 'python_script' ? 'block' : 'none';
@@ -410,7 +440,7 @@
       outputs.forEach(artifact => {
         const link = document.createElement('a');
         link.className = 'artifact-link';
-        link.href = artifact.url || `/artifacts/${artifact.object_key}`;
+        link.href = authUrl(artifact.url || `/artifacts/${artifact.object_key}`);
         link.textContent = `Download ${artifact.name || artifact.object_key}`;
         link.target = '_blank';
         artifactLinks.appendChild(link);
@@ -449,7 +479,7 @@
 
     async function checkHealth() {
       try {
-        const res = await fetch('/healthz');
+        const res = await authFetch('/healthz');
         const data = await res.json();
         healthPill.textContent = res.ok ? 'API and storage online' : 'API issue';
         healthPill.className = `pill ${res.ok ? 'ok' : 'bad'}`;
@@ -461,7 +491,7 @@
     }
 
     async function fetchClusterStatus() {
-      const res = await fetch('/cluster/status');
+      const res = await authFetch('/cluster/status');
       const data = await res.json();
       if (!res.ok) throw new Error(pretty(data));
       currentClusterStatus = data;
@@ -485,7 +515,7 @@
       applyPolicyBtn.disabled = true;
       applyPolicyBtn.textContent = 'Applying...';
       try {
-        const res = await fetch('/routing-policy', {
+        const res = await authFetch('/routing-policy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ policy })
@@ -516,16 +546,16 @@
           form.append('script', fileInput.files[0]);
           form.append('timeout_seconds', document.getElementById('python-timeout').value);
           [...inputFiles.files].forEach(file => form.append('input_files', file));
-          response = await fetch('/jobs/python', { method: 'POST', body: form });
+          response = await authFetch('/jobs/python', { method: 'POST', body: form });
         } else if (jobType.value === 'file_process') {
           const fileInput = document.getElementById('file-input');
           if (!fileInput.files.length) throw new Error('Choose a file first');
           const form = new FormData();
           form.append('operation', document.getElementById('file-operation').value);
           form.append('input_file', fileInput.files[0]);
-          response = await fetch('/jobs/file', { method: 'POST', body: form });
+          response = await authFetch('/jobs/file', { method: 'POST', body: form });
         } else if (jobType.value === 'compute') {
-          response = await fetch('/jobs', {
+          response = await authFetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -537,7 +567,7 @@
             })
           });
         } else {
-          response = await fetch('/jobs', {
+          response = await authFetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'ml', params: JSON.parse(document.getElementById('ml-json').value) })
@@ -562,7 +592,7 @@
     }
 
     async function fetchStatus(jobId) {
-      const res = await fetch(`/jobs/${jobId}`);
+      const res = await authFetch(`/jobs/${jobId}`);
       const data = await res.json();
       statusOutput.textContent = pretty(data);
       if (!res.ok) throw new Error(pretty(data));
@@ -570,7 +600,7 @@
     }
 
     async function fetchResult(jobId) {
-      const res = await fetch(`/jobs/${jobId}/result`);
+      const res = await authFetch(`/jobs/${jobId}/result`);
       const data = await res.json();
       if (!res.ok) {
         resultOutput.textContent = pretty(data);
@@ -586,7 +616,7 @@
       const confirmed = window.confirm(`Delete queued job ${jobId}? This will not stop running jobs.`);
       if (!confirmed) return;
       try {
-        const res = await fetch(`/jobs/${jobId}`, { method: 'DELETE' });
+        const res = await authFetch(`/jobs/${jobId}`, { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) throw new Error(pretty(data));
         if (currentJobId === jobId) {
@@ -652,6 +682,8 @@
       pollTimer = null;
     }
 
+    apiTokenInput.value = getApiToken();
+    saveApiTokenBtn.addEventListener('click', saveApiToken);
     jobType.addEventListener('change', setVisibleFields);
     submitBtn.addEventListener('click', submitJob);
     loadJobBtn.addEventListener('click', () => jobIdInput.value.trim() && loadJob(jobIdInput.value.trim()));
