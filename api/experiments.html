@@ -94,17 +94,6 @@
 
     <div id="action-banner" class="banner"></div>
 
-    <section class="card stack" style="margin-bottom:20px;">
-      <div>
-        <h2>Remote Access Token</h2>
-        <p class="small">Set the API token once in this browser. It stays in local storage and is sent with API requests.</p>
-      </div>
-      <div class="inline">
-        <input id="api-token" type="password" placeholder="Paste API token" />
-        <button id="save-api-token-btn" class="secondary" style="max-width:180px;">Save token</button>
-      </div>
-    </section>
-
     <div class="grid-wide">
       <section class="card stack">
         <div class="job-header">
@@ -221,8 +210,6 @@
     const healthPill = document.getElementById('health-pill');
     const policyPill = document.getElementById('policy-pill');
     const actionBanner = document.getElementById('action-banner');
-    const apiTokenInput = document.getElementById('api-token');
-    const saveApiTokenBtn = document.getElementById('save-api-token-btn');
     const experimentPolicy = document.getElementById('experiment-policy');
     const experimentWorkload = document.getElementById('experiment-workload');
     const experimentJobCount = document.getElementById('experiment-job-count');
@@ -252,15 +239,32 @@
     function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
     function safe(value, fallback='n/a') { return value === undefined || value === null || value === '' ? fallback : value; }
     function getApiToken() { return localStorage.getItem('miniDcApiToken') || ''; }
-    function saveApiToken() {
-      localStorage.setItem('miniDcApiToken', apiTokenInput.value.trim());
-      showBanner('Saved API token in this browser.', 'ok');
+    function setApiToken(token) {
+      localStorage.setItem('miniDcApiToken', token.trim());
     }
-    function authFetch(url, options = {}) {
+    function promptForApiToken(reason = '') {
+      const message = reason
+        ? `${reason}\n\nPaste your API token:`
+        : 'Paste your API token:';
+      const token = window.prompt(message, getApiToken());
+      if (!token) return false;
+      setApiToken(token);
+      showBanner('Saved API token in this browser.', 'ok');
+      return true;
+    }
+    async function authFetch(url, options = {}, retry = true) {
+      let token = getApiToken();
+      if (!token && !promptForApiToken('Remote access requires your API token.')) {
+        throw new Error('API token is required');
+      }
+      token = getApiToken();
       const headers = new Headers(options.headers || {});
-      const token = getApiToken();
       if (token) headers.set('x-api-key', token);
-      return fetch(url, { ...options, headers });
+      const response = await fetch(url, { ...options, headers });
+      if (response.status === 401 && retry && promptForApiToken('That API token was rejected.')) {
+        return authFetch(url, options, false);
+      }
+      return response;
     }
     function authUrl(url) {
       const token = getApiToken();
@@ -577,8 +581,6 @@
       pollTimer = null;
     }
 
-    apiTokenInput.value = getApiToken();
-    saveApiTokenBtn.addEventListener('click', saveApiToken);
     createExperimentBtn.addEventListener('click', () => createExperiment().catch(err => alert(String(err))));
     startExperimentBtn.addEventListener('click', () => startExperiment().catch(err => alert(String(err))));
     deleteExperimentBtn.addEventListener('click', () => deleteExperiment().catch(err => alert(String(err))));
