@@ -1,4 +1,5 @@
 import hmac
+import ipaddress
 import json
 import mimetypes
 import os
@@ -126,8 +127,19 @@ def auth_enabled() -> bool:
     return bool(API_AUTH_TOKEN)
 
 
+def client_is_trusted(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host in {"localhost"}
+    return ip.is_loopback or ip.is_private
+
+
 def require_api_auth(request: Request) -> None:
-    if not auth_enabled():
+    if not auth_enabled() or client_is_trusted(request):
         return
     provided = request.headers.get(API_AUTH_HEADER, "") or request.query_params.get("api_key", "")
     if not provided or not hmac.compare_digest(provided, API_AUTH_TOKEN):
