@@ -879,18 +879,36 @@ def suite_manifest_path(suite_id: str) -> Path:
     return SUITES_ROOT / suite_id / "suite_manifest.json"
 
 
+def suite_artifacts_payload(suite_id: str) -> dict:
+    suite_root = SUITES_ROOT / suite_id
+    artifacts = {}
+    for file_name in ["suite_manifest.json", "suite_summary.csv", "suite_job_results.csv"]:
+        file_path = suite_root / file_name
+        if file_path.exists():
+            artifacts[file_name] = {
+                "file_name": file_name,
+                "url": f"/experiment-suites/{suite_id}/artifacts/{file_name}",
+            }
+    return artifacts
+
+
 def read_suite_manifest(suite_id: str) -> dict:
     manifest = suite_manifest_path(suite_id)
     if not manifest.exists():
         raise HTTPException(status_code=404, detail=f"experiment suite not found: {suite_id}")
-    return json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text())
+    data["artifacts"] = suite_artifacts_payload(suite_id)
+    return data
 
 
 def list_suite_manifests() -> list[dict]:
     SUITES_ROOT.mkdir(parents=True, exist_ok=True)
     suites = []
     for manifest in sorted(SUITES_ROOT.glob("*/suite_manifest.json"), reverse=True):
-        suites.append(json.loads(manifest.read_text()))
+        suite_id = manifest.parent.name
+        data = json.loads(manifest.read_text())
+        data["artifacts"] = suite_artifacts_payload(suite_id)
+        suites.append(data)
     return suites
 
 
@@ -948,6 +966,24 @@ def get_experiment_suites(request: Request) -> dict:
 def get_experiment_suite(suite_id: str, request: Request) -> dict:
     require_api_auth(request)
     return read_suite_manifest(validate_run_id(suite_id))
+
+
+@app.get("/experiment-suites/{suite_id}/artifacts/{artifact_name}")
+def download_experiment_suite_artifact(suite_id: str, artifact_name: str, request: Request):
+    require_api_auth(request)
+    suite_id = validate_run_id(suite_id)
+    allowed = {"suite_manifest.json", "suite_summary.csv", "suite_job_results.csv"}
+    if artifact_name not in allowed:
+        raise HTTPException(status_code=404, detail="artifact not found")
+    file_path = (SUITES_ROOT / suite_id / artifact_name).resolve()
+    suite_root = (SUITES_ROOT / suite_id).resolve()
+    try:
+        file_path.relative_to(suite_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid artifact path") from exc
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(str(file_path), filename=file_path.name)
 
 
 @app.post("/experiment-suites/class-project-routing-suite")

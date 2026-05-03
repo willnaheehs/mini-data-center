@@ -82,6 +82,27 @@ def write_suite_summary_csv(suite_id: str, manifest: dict) -> None:
             writer.writerow(row)
 
 
+def write_suite_job_results_csv(suite_id: str, manifest: dict) -> None:
+    rows = []
+    for run in manifest.get("runs", []):
+        csv_path = RUNS_ROOT / run.get("run_id", "") / "metrics" / "job_results_summary.csv"
+        if not csv_path.exists():
+            continue
+        with csv_path.open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                row.setdefault("suite_id", suite_id)
+                row.setdefault("workload_label", run.get("workload_label"))
+                rows.append(row)
+
+    path = suite_dir(suite_id) / "suite_job_results.csv"
+    fieldnames = list(rows[0].keys()) if rows else ["suite_id", "run_id", "policy", "workload_file", "job_type"]
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--suite-id", required=True)
@@ -156,6 +177,12 @@ def main() -> None:
         manifest["status"] = "completed"
     manifest["finished_at"] = utc_now_iso()
     write_suite_summary_csv(args.suite_id, manifest)
+    write_suite_job_results_csv(args.suite_id, manifest)
+    manifest["artifacts"] = {
+        "suite_manifest_json": "suite_manifest.json",
+        "suite_summary_csv": "suite_summary.csv",
+        "suite_job_results_csv": "suite_job_results.csv",
+    }
     write_json(suite_manifest_path(args.suite_id), manifest)
     print(json.dumps({"suite_id": args.suite_id, "status": manifest["status"]}, indent=2))
 

@@ -448,6 +448,11 @@
       }
       suiteList.innerHTML = suites.map(suite => {
         const completedRuns = (suite.runs || []).filter(run => run.run_status === 'completed').length;
+        const artifacts = suite.artifacts || {};
+        const links = [
+          artifacts['suite_summary.csv'] ? `<a class="artifact-link" href="${artifacts['suite_summary.csv'].url}" target="_blank" rel="noreferrer">Download suite summary CSV</a>` : '',
+          artifacts['suite_job_results.csv'] ? `<a class="artifact-link" href="${artifacts['suite_job_results.csv'].url}" target="_blank" rel="noreferrer">Download combined job-results CSV</a>` : ''
+        ].filter(Boolean).join('');
         return `
           <div class="job-item">
             <div class="job-header">
@@ -457,6 +462,7 @@
             <div class="small">${safe(completedRuns, 0)} / ${safe(suite.run_count, 12)} runs complete</div>
             <div class="small">Interval: ${safe(suite.submit_interval_ms, 'n/a')} ms</div>
             <div class="small">Started: ${safe(formatWhen(suite.started_at), 'not started')}</div>
+            <div class="artifact-list">${links || '<div class="small">CSV downloads will appear when the suite finishes.</div>'}</div>
           </div>
         `;
       }).join('');
