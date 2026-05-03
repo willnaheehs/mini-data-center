@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import copy
 import json
 import random
@@ -81,6 +82,22 @@ def submit_job(job: dict, api_base: str):
     return response["job_id"], submitted_at_runner, submitted_at_wall
 
 
+def submit_job_on_schedule(index: int, job: dict, api_base: str, start_perf: float, submit_interval_ms: int):
+    target_perf = start_perf + ((submit_interval_ms / 1000.0) * index)
+    delay = target_perf - time.perf_counter()
+    if delay > 0:
+        time.sleep(delay)
+    job_id, submitted_at_runner, submitted_at_wall = submit_job(job, api_base=api_base)
+    return {
+        "index": index,
+        "job_id": job_id,
+        "submitted_at_runner": submitted_at_runner,
+        "submitted_at_wall": submitted_at_wall,
+        "scheduled_offset_ms": index * submit_interval_ms,
+        "job": job,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
@@ -101,17 +118,25 @@ def main() -> None:
     policy = manifest["policy"]
     api_request("POST", "/routing-policy", payload={"policy": policy}, api_base=args.api_base)
 
-    submitted_job_ids = []
     submission_records = {}
-    for job in expanded_jobs:
-        job_id, submitted_at_runner, submitted_at_wall = submit_job(job, api_base=args.api_base)
-        submitted_job_ids.append(job_id)
-        submission_records[job_id] = {
-            "runner_submitted_perf_counter": submitted_at_runner,
-            "runner_submitted_at": submitted_at_wall,
-            "job_request": job,
+    start_perf = time.perf_counter()
+    max_workers = min(32, max(1, len(expanded_jobs)))
+    futures = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for index, job in enumerate(expanded_jobs):
+            futures.append(executor.submit(submit_job_on_schedule, index, job, args.api_base, start_perf, submit_interval_ms))
+
+    submitted = [future.result() for future in futures]
+    submitted.sort(key=lambda item: item["index"])
+    submitted_job_ids = []
+    for item in submitted:
+        submitted_job_ids.append(item["job_id"])
+        submission_records[item["job_id"]] = {
+            "runner_submitted_perf_counter": item["submitted_at_runner"],
+            "runner_submitted_at": item["submitted_at_wall"],
+            "scheduled_offset_ms": item["scheduled_offset_ms"],
+            "job_request": item["job"],
         }
-        time.sleep(submit_interval_ms / 1000.0)
 
     manifest["timestamp_start"] = utc_now_iso()
     manifest["run_status"] = "running"
@@ -128,6 +153,7 @@ def main() -> None:
         "status": manifest["run_status"],
         "submitted_jobs": len(submitted_job_ids),
         "policy_applied": policy,
+        "submit_interval_ms_effective": submit_interval_ms,
     }, indent=2))
 
 

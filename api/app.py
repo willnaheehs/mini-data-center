@@ -309,7 +309,47 @@ def get_recent_worker_service_stats(limit: int = 40) -> dict[str, dict[str, floa
     return stats
 
 
-def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, float]], default_service_time: float) -> dict:
+def estimate_job_work_units(job_type: str | None, params: dict | None) -> float:
+    job_type = (job_type or "").strip().lower()
+    params = params or {}
+    if job_type == "compute":
+        task = params.get("task", "")
+        task_params = params.get("params", {})
+        if task == "prime_count":
+            return float(task_params.get("n", 1))
+        if task == "monte_carlo_pi":
+            return float(task_params.get("samples", 1)) * 0.18
+        if task == "sort_numbers":
+            values = task_params.get("values")
+            if isinstance(values, list) and values:
+                count = len(values)
+            else:
+                values_config = task_params.get("values_config", {})
+                count = int(values_config.get("count", 1))
+            return float(count) * max(1.0, math.log2(max(count, 2))) * 2.0
+        if task == "matrix_multiply":
+            size = float(task_params.get("size", 1))
+            return (size ** 3) * 0.35
+        return 1.0
+    if job_type == "ml":
+        features = params.get("features", [])
+        weights = params.get("weights", [])
+        return max(1.0, float(len(features) * max(len(weights), 1)))
+    return 1.0
+
+
+def estimate_queue_work_units(queue_name: str) -> float:
+    total = 0.0
+    for raw_job in r.lrange(queue_name, 0, -1):
+        try:
+            job = json.loads(raw_job)
+        except Exception:
+            continue
+        total += estimate_job_work_units(job.get("job_type"), job.get("params"))
+    return total
+
+
+def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, float]], default_service_time: float, incoming_job_work_units: float = 1.0) -> dict:
     queue_length = get_queue_length(worker["queue_name"])
     busy_value = get_busy_value(worker["busy_key"])
     cpu_temperature_celsius = get_temperature_value(worker.get("temp_key", ""))
@@ -317,6 +357,9 @@ def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, floa
     estimated_load = queue_length + busy_value
     estimated_completion_seconds = (queue_length + busy_value + 1) * avg_service_time
     temp_penalty = temperature_penalty_seconds(cpu_temperature_celsius)
+    queued_work_units = estimate_queue_work_units(worker["queue_name"])
+    busy_work_units = busy_value * max(incoming_job_work_units, 1.0)
+    adaptive_score = queued_work_units + busy_work_units + incoming_job_work_units
     return {
         **worker,
         "queue_length": queue_length,
@@ -324,33 +367,37 @@ def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, floa
         "estimated_load": estimated_load,
         "avg_service_time": avg_service_time,
         "estimated_completion_seconds": estimated_completion_seconds,
+        "queued_work_units": queued_work_units,
+        "incoming_job_work_units": incoming_job_work_units,
         "cpu_temperature_celsius": cpu_temperature_celsius,
         "temperature_penalty_seconds": temp_penalty,
         "temperature_state": temperature_state(cpu_temperature_celsius),
-        "adaptive_score": estimated_completion_seconds + temp_penalty,
+        "adaptive_score": adaptive_score,
     }
 
 
 def select_adaptive_candidate(candidates: list[dict]) -> tuple[dict, float, int]:
-    ordered = sorted(candidates, key=lambda item: (item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
-    best_eta = ordered[0]["estimated_completion_seconds"]
-    tie_band_seconds = max(0.35, best_eta * 0.15)
+    ordered = sorted(candidates, key=lambda item: (item["adaptive_score"], item["queue_length"], item["worker_name"]))
+    best_score = ordered[0]["adaptive_score"]
+    tie_band_units = max(1.0, best_score * 0.10)
     close_candidates = [
         item for item in ordered
-        if (item["estimated_completion_seconds"] - best_eta) <= tie_band_seconds
+        if (item["adaptive_score"] - best_score) <= tie_band_units
     ]
     close_candidates.sort(
         key=lambda item: (
             item["temperature_penalty_seconds"] if item.get("cpu_temperature_celsius") is not None else float("inf"),
             item.get("cpu_temperature_celsius") if item.get("cpu_temperature_celsius") is not None else float("inf"),
+            item["adaptive_score"],
             item["queue_length"],
             item["worker_name"],
         )
     )
-    return close_candidates[0], tie_band_seconds, len(close_candidates)
+    return close_candidates[0], tie_band_units, len(close_candidates)
 
 
-def choose_target() -> dict:
+def choose_target(job_type: str | None = None, job_params: dict | None = None) -> dict:
+
     """Choose a worker using the active routing policy.
 
     adaptive = estimated completion time + CPU temperature penalty
@@ -359,13 +406,14 @@ def choose_target() -> dict:
     routing_policy = get_current_routing_policy()
     runtime_stats = get_recent_worker_service_stats()
     default_service_time = 1.0
+    incoming_job_work_units = estimate_job_work_units(job_type, job_params)
 
     if routing_policy == "round_robin":
         counter = r.incr("mini-dc-api:round-robin-index") - 1
-        target = build_worker_candidate(WORKER_QUEUES[counter % len(WORKER_QUEUES)], runtime_stats, default_service_time)
+        target = build_worker_candidate(WORKER_QUEUES[counter % len(WORKER_QUEUES)], runtime_stats, default_service_time, incoming_job_work_units)
         return {**target, "policy": routing_policy}
 
-    candidates = [build_worker_candidate(worker, runtime_stats, default_service_time) for worker in WORKER_QUEUES]
+    candidates = [build_worker_candidate(worker, runtime_stats, default_service_time, incoming_job_work_units) for worker in WORKER_QUEUES]
 
     if routing_policy == "random":
         target = random.choice(candidates)
@@ -389,8 +437,8 @@ def choose_target() -> dict:
     if routing_policy == "adaptive":
         selected_candidate, tie_band_seconds, candidate_count = select_adaptive_candidate(candidates)
         selected = {**selected_candidate, "policy": routing_policy}
-        selected["policy_detail"] = "estimated_completion_with_temperature_tiebreak"
-        selected["adaptive_tie_band_seconds"] = tie_band_seconds
+        selected["policy_detail"] = "queued_work_with_temperature_tiebreak"
+        selected["adaptive_tie_band_units"] = tie_band_seconds
         selected["adaptive_tie_candidate_count"] = candidate_count
         return selected
 
@@ -422,7 +470,7 @@ def normalize_job(request: JobCreateRequest) -> dict:
     else:
         raise HTTPException(status_code=400, detail=f"unsupported job type: {request.type}")
 
-    target = choose_target()
+    target = choose_target(worker_job["job_type"], worker_job["params"])
     policy = target.get("policy", get_current_routing_policy())
     dispatched_at = utc_now()
     return {
@@ -616,7 +664,7 @@ async def create_file_job(
     submitted_at = utc_now()
     input_artifact = await persist_upload(job_id, input_file, "input", FILE_PROCESS_MAX_BYTES)
 
-    target = choose_target()
+    target = choose_target("file_process", {"operation": operation, "input_artifact": input_artifact})
     policy = target.get("policy", get_current_routing_policy())
     cluster_snapshot = get_cluster_snapshot()
     job = {
@@ -690,7 +738,7 @@ async def create_python_job(
             raise HTTPException(status_code=400, detail=f"too many input files, max {MAX_INPUT_FILES}")
         uploaded_inputs.append(await persist_upload(job_id, upload, "input", MAX_INPUT_FILE_BYTES))
 
-    target = choose_target()
+    target = choose_target("python_script", {"script_name": script.filename or script_artifact["name"], "timeout_seconds": timeout_seconds})
     policy = target.get("policy", get_current_routing_policy())
     cluster_snapshot = get_cluster_snapshot()
     job = {
