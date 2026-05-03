@@ -331,6 +331,25 @@ def build_worker_candidate(worker: dict, runtime_stats: dict[str, dict[str, floa
     }
 
 
+def select_adaptive_candidate(candidates: list[dict]) -> tuple[dict, float, int]:
+    ordered = sorted(candidates, key=lambda item: (item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
+    best_eta = ordered[0]["estimated_completion_seconds"]
+    tie_band_seconds = max(0.35, best_eta * 0.15)
+    close_candidates = [
+        item for item in ordered
+        if (item["estimated_completion_seconds"] - best_eta) <= tie_band_seconds
+    ]
+    close_candidates.sort(
+        key=lambda item: (
+            item["temperature_penalty_seconds"] if item.get("cpu_temperature_celsius") is not None else float("inf"),
+            item.get("cpu_temperature_celsius") if item.get("cpu_temperature_celsius") is not None else float("inf"),
+            item["queue_length"],
+            item["worker_name"],
+        )
+    )
+    return close_candidates[0], tie_band_seconds, len(close_candidates)
+
+
 def choose_target() -> dict:
     """Choose a worker using the active routing policy.
 
@@ -368,9 +387,11 @@ def choose_target() -> dict:
         return selected
 
     if routing_policy == "adaptive":
-        candidates.sort(key=lambda item: (item["adaptive_score"], item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
-        selected = {**candidates[0], "policy": routing_policy}
-        selected["policy_detail"] = "estimated_completion_plus_temperature_penalty"
+        selected_candidate, tie_band_seconds, candidate_count = select_adaptive_candidate(candidates)
+        selected = {**selected_candidate, "policy": routing_policy}
+        selected["policy_detail"] = "estimated_completion_with_temperature_tiebreak"
+        selected["adaptive_tie_band_seconds"] = tie_band_seconds
+        selected["adaptive_tie_candidate_count"] = candidate_count
         return selected
 
     raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {routing_policy}")
