@@ -309,6 +309,16 @@ def get_recent_worker_service_stats(limit: int = 40) -> dict[str, dict[str, floa
     return stats
 
 
+def job_task_key(job_type: str | None, params: dict | None) -> str:
+    job_type = (job_type or "").strip().lower()
+    params = params or {}
+    if job_type == "compute":
+        return f"compute:{params.get('task', 'unknown')}"
+    if job_type == "ml":
+        return f"ml:{params.get('operation', 'unknown')}"
+    return job_type or "unknown"
+
+
 def estimate_job_work_units(job_type: str | None, params: dict | None) -> float:
     job_type = (job_type or "").strip().lower()
     params = params or {}
@@ -338,11 +348,94 @@ def estimate_job_work_units(job_type: str | None, params: dict | None) -> float:
     return 1.0
 
 
-def get_outstanding_worker_loads(limit: int = 400) -> dict[str, dict[str, float]]:
+def get_recent_worker_rate_stats(limit: int = 200) -> tuple[dict[str, dict], float]:
+    job_ids = r.zrevrange(JOB_INDEX_KEY, 0, max(0, limit - 1))
+    stats: dict[str, dict] = {}
+    total_service_seconds = 0.0
+    total_work_units = 0.0
+
+    for job_id in job_ids:
+        result_doc = redis_get_json(result_key(job_id)) or {}
+        payload_doc = redis_get_json(payload_key(job_id)) or {}
+        worker_name = result_doc.get("worker_name")
+        metrics = result_doc.get("metrics") or {}
+        service_time = metrics.get("service_time")
+        if not worker_name or service_time in (None, ""):
+            continue
+        try:
+            service_value = float(service_time)
+        except (TypeError, ValueError):
+            continue
+        if service_value <= 0:
+            continue
+
+        job_type = payload_doc.get("job_type")
+        params = payload_doc.get("params") or {}
+        work_units = estimate_job_work_units(job_type, params)
+        if work_units <= 0:
+            continue
+        task_key = job_task_key(job_type, params)
+
+        worker_stats = stats.setdefault(worker_name, {
+            "overall_service_seconds": 0.0,
+            "overall_work_units": 0.0,
+            "tasks": {},
+        })
+        worker_stats["overall_service_seconds"] += service_value
+        worker_stats["overall_work_units"] += work_units
+        task_stats = worker_stats["tasks"].setdefault(task_key, {
+            "service_seconds": 0.0,
+            "work_units": 0.0,
+        })
+        task_stats["service_seconds"] += service_value
+        task_stats["work_units"] += work_units
+
+        total_service_seconds += service_value
+        total_work_units += work_units
+
+    default_seconds_per_unit = (total_service_seconds / total_work_units) if total_work_units > 0 else 0.00001
+    for worker_name, worker_stats in stats.items():
+        overall_units = worker_stats["overall_work_units"]
+        worker_stats["overall_seconds_per_unit"] = (
+            worker_stats["overall_service_seconds"] / overall_units
+            if overall_units > 0 else default_seconds_per_unit
+        )
+        for task_key, task_stats in worker_stats["tasks"].items():
+            units = task_stats["work_units"]
+            task_stats["seconds_per_unit"] = (
+                task_stats["service_seconds"] / units
+                if units > 0 else worker_stats["overall_seconds_per_unit"]
+            )
+    return stats, default_seconds_per_unit
+
+
+def estimate_job_seconds_for_worker(
+    job_type: str | None,
+    params: dict | None,
+    worker_name: str,
+    worker_rate_stats: dict[str, dict],
+    default_seconds_per_unit: float,
+) -> float:
+    work_units = estimate_job_work_units(job_type, params)
+    task_key = job_task_key(job_type, params)
+    worker_stats = worker_rate_stats.get(worker_name, {})
+    task_stats = (worker_stats.get("tasks") or {}).get(task_key, {})
+    seconds_per_unit = task_stats.get("seconds_per_unit")
+    if seconds_per_unit is None:
+        seconds_per_unit = worker_stats.get("overall_seconds_per_unit", default_seconds_per_unit)
+    return work_units * max(float(seconds_per_unit), 0.00001)
+
+
+def get_outstanding_worker_loads(
+    worker_rate_stats: dict[str, dict],
+    default_seconds_per_unit: float,
+    limit: int = 400,
+) -> dict[str, dict[str, float]]:
     loads = {
         worker["worker_name"]: {
             "outstanding_work_units": 0.0,
             "outstanding_job_count": 0.0,
+            "outstanding_predicted_seconds": 0.0,
         }
         for worker in WORKER_QUEUES
     }
@@ -355,9 +448,22 @@ def get_outstanding_worker_loads(limit: int = 400) -> dict[str, dict[str, float]
         if not target_worker or status_value not in {"dispatched", "running"}:
             continue
         if target_worker not in loads:
-            loads[target_worker] = {"outstanding_work_units": 0.0, "outstanding_job_count": 0.0}
-        loads[target_worker]["outstanding_work_units"] += estimate_job_work_units(payload_doc.get("job_type"), payload_doc.get("params"))
+            loads[target_worker] = {
+                "outstanding_work_units": 0.0,
+                "outstanding_job_count": 0.0,
+                "outstanding_predicted_seconds": 0.0,
+            }
+        job_type = payload_doc.get("job_type")
+        params = payload_doc.get("params") or {}
+        loads[target_worker]["outstanding_work_units"] += estimate_job_work_units(job_type, params)
         loads[target_worker]["outstanding_job_count"] += 1.0
+        loads[target_worker]["outstanding_predicted_seconds"] += estimate_job_seconds_for_worker(
+            job_type,
+            params,
+            target_worker,
+            worker_rate_stats,
+            default_seconds_per_unit,
+        )
     return loads
 
 
@@ -366,8 +472,8 @@ def build_worker_candidate(
     runtime_stats: dict[str, dict[str, float]],
     default_service_time: float,
     incoming_job_work_units: float = 1.0,
+    incoming_job_seconds: float = 0.0,
     outstanding_loads: dict[str, dict[str, float]] | None = None,
-    cluster_avg_service_time: float = 1.0,
 ) -> dict:
     queue_length = get_queue_length(worker["queue_name"])
     busy_value = get_busy_value(worker["busy_key"])
@@ -379,8 +485,8 @@ def build_worker_candidate(
     load_info = (outstanding_loads or {}).get(worker["worker_name"], {})
     outstanding_work_units = float(load_info.get("outstanding_work_units", 0.0))
     outstanding_job_count = float(load_info.get("outstanding_job_count", 0.0))
-    service_slowdown_factor = avg_service_time / max(cluster_avg_service_time, 0.001)
-    adaptive_score = (outstanding_work_units + incoming_job_work_units) * service_slowdown_factor
+    outstanding_predicted_seconds = float(load_info.get("outstanding_predicted_seconds", 0.0))
+    adaptive_score = outstanding_predicted_seconds + incoming_job_seconds
     return {
         **worker,
         "queue_length": queue_length,
@@ -390,8 +496,9 @@ def build_worker_candidate(
         "estimated_completion_seconds": estimated_completion_seconds,
         "outstanding_work_units": outstanding_work_units,
         "outstanding_job_count": outstanding_job_count,
+        "outstanding_predicted_seconds": outstanding_predicted_seconds,
         "incoming_job_work_units": incoming_job_work_units,
-        "service_slowdown_factor": service_slowdown_factor,
+        "incoming_job_predicted_seconds": incoming_job_seconds,
         "cpu_temperature_celsius": cpu_temperature_celsius,
         "temperature_penalty_seconds": temp_penalty,
         "temperature_state": temperature_state(cpu_temperature_celsius),
@@ -400,41 +507,41 @@ def build_worker_candidate(
 
 
 def select_adaptive_candidate(candidates: list[dict]) -> tuple[dict, float, int]:
-    ordered = sorted(candidates, key=lambda item: (item["adaptive_score"], item["outstanding_job_count"], item["worker_name"]))
+    ordered = sorted(candidates, key=lambda item: (item["adaptive_score"], item["worker_name"]))
     best_score = ordered[0]["adaptive_score"]
-    tie_band_units = max(1.0, best_score * 0.10)
+    tie_band_seconds = max(0.15, best_score * 0.05)
     close_candidates = [
         item for item in ordered
-        if (item["adaptive_score"] - best_score) <= tie_band_units
+        if (item["adaptive_score"] - best_score) <= tie_band_seconds
     ]
     close_candidates.sort(
         key=lambda item: (
-            item["outstanding_job_count"],
             item["temperature_penalty_seconds"] if item.get("cpu_temperature_celsius") is not None else float("inf"),
             item.get("cpu_temperature_celsius") if item.get("cpu_temperature_celsius") is not None else float("inf"),
             item["adaptive_score"],
+            item["outstanding_job_count"],
             item["worker_name"],
         )
     )
     best_key = (
-        close_candidates[0]["outstanding_job_count"],
         close_candidates[0]["temperature_penalty_seconds"] if close_candidates[0].get("cpu_temperature_celsius") is not None else float("inf"),
         close_candidates[0].get("cpu_temperature_celsius") if close_candidates[0].get("cpu_temperature_celsius") is not None else float("inf"),
         close_candidates[0]["adaptive_score"],
+        close_candidates[0]["outstanding_job_count"],
     )
     equally_best = [
         item for item in close_candidates
         if (
-            item["outstanding_job_count"],
             item["temperature_penalty_seconds"] if item.get("cpu_temperature_celsius") is not None else float("inf"),
             item.get("cpu_temperature_celsius") if item.get("cpu_temperature_celsius") is not None else float("inf"),
             item["adaptive_score"],
+            item["outstanding_job_count"],
         ) == best_key
     ]
     if len(equally_best) == 1:
-        return equally_best[0], tie_band_units, len(close_candidates)
+        return equally_best[0], tie_band_seconds, len(close_candidates)
     index = (r.incr("mini-dc-api:adaptive-tie-index") - 1) % len(equally_best)
-    return equally_best[index], tie_band_units, len(close_candidates)
+    return equally_best[index], tie_band_seconds, len(close_candidates)
 
 
 def choose_target(job_type: str | None = None, job_params: dict | None = None) -> dict:
@@ -448,16 +555,32 @@ def choose_target(job_type: str | None = None, job_params: dict | None = None) -
     runtime_stats = get_recent_worker_service_stats()
     default_service_time = 1.0
     incoming_job_work_units = estimate_job_work_units(job_type, job_params)
-    outstanding_loads = get_outstanding_worker_loads()
-    observed_service_times = [stats["avg_service_time"] for stats in runtime_stats.values() if stats.get("avg_service_time")]
-    cluster_avg_service_time = (sum(observed_service_times) / len(observed_service_times)) if observed_service_times else default_service_time
+    worker_rate_stats, default_seconds_per_unit = get_recent_worker_rate_stats()
+    outstanding_loads = get_outstanding_worker_loads(worker_rate_stats, default_seconds_per_unit)
 
     if routing_policy == "round_robin":
         counter = r.incr("mini-dc-api:round-robin-index") - 1
-        target = build_worker_candidate(WORKER_QUEUES[counter % len(WORKER_QUEUES)], runtime_stats, default_service_time, incoming_job_work_units, outstanding_loads, cluster_avg_service_time)
+        target = build_worker_candidate(
+            WORKER_QUEUES[counter % len(WORKER_QUEUES)],
+            runtime_stats,
+            default_service_time,
+            incoming_job_work_units,
+            estimate_job_seconds_for_worker(job_type, job_params, WORKER_QUEUES[counter % len(WORKER_QUEUES)]["worker_name"], worker_rate_stats, default_seconds_per_unit),
+            outstanding_loads,
+        )
         return {**target, "policy": routing_policy}
 
-    candidates = [build_worker_candidate(worker, runtime_stats, default_service_time, incoming_job_work_units, outstanding_loads, cluster_avg_service_time) for worker in WORKER_QUEUES]
+    candidates = [
+        build_worker_candidate(
+            worker,
+            runtime_stats,
+            default_service_time,
+            incoming_job_work_units,
+            estimate_job_seconds_for_worker(job_type, job_params, worker["worker_name"], worker_rate_stats, default_seconds_per_unit),
+            outstanding_loads,
+        )
+        for worker in WORKER_QUEUES
+    ]
 
     if routing_policy == "random":
         target = random.choice(candidates)
@@ -481,8 +604,8 @@ def choose_target(job_type: str | None = None, job_params: dict | None = None) -
     if routing_policy == "adaptive":
         selected_candidate, tie_band_seconds, candidate_count = select_adaptive_candidate(candidates)
         selected = {**selected_candidate, "policy": routing_policy}
-        selected["policy_detail"] = "outstanding_work_with_temperature_tiebreak_and_tie_rotation"
-        selected["adaptive_tie_band_units"] = tie_band_seconds
+        selected["policy_detail"] = "predicted_completion_time_with_temperature_tiebreak_and_tie_rotation"
+        selected["adaptive_tie_band_seconds"] = tie_band_seconds
         selected["adaptive_tie_candidate_count"] = candidate_count
         return selected
 
