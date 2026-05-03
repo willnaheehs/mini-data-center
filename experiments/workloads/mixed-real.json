@@ -3,9 +3,23 @@
   "submit_interval_ms": 250,
   "shuffle_jobs": true,
   "shuffle_seed": 42,
+  "job_type": "compute",
+  "workload_label": "mixed_compute",
   "job_groups": [
     {
-      "repeat": 7,
+      "repeat": 6,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "prime_count",
+          "params": {
+            "n": 18000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 6,
       "job": {
         "api_type": "compute",
         "params": {
@@ -17,7 +31,7 @@
       }
     },
     {
-      "repeat": 7,
+      "repeat": 6,
       "job": {
         "api_type": "compute",
         "params": {
@@ -33,27 +47,51 @@
       "job": {
         "api_type": "compute",
         "params": {
-          "task": "monte_carlo_pi",
+          "task": "prime_count",
           "params": {
-            "samples": 220000
+            "n": 95000
           }
         }
       }
     },
     {
-      "repeat": 6,
+      "repeat": 5,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "monte_carlo_pi",
           "params": {
-            "samples": 300000
+            "samples": 80000
           }
         }
       }
     },
     {
-      "repeat": 6,
+      "repeat": 5,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "monte_carlo_pi",
+          "params": {
+            "samples": 250000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 5,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "monte_carlo_pi",
+          "params": {
+            "samples": 650000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 5,
       "job": {
         "api_type": "compute",
         "params": {
@@ -61,14 +99,14 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 3000
+              "count": 1200
             }
           }
         }
       }
     },
     {
-      "repeat": 6,
+      "repeat": 5,
       "job": {
         "api_type": "compute",
         "params": {
@@ -76,38 +114,65 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 4000
+              "count": 5000
             }
           }
         }
       }
     },
     {
-      "repeat": 6,
+      "repeat": 5,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "sort_numbers",
+          "params": {
+            "values_config": {
+              "pattern": "descending",
+              "count": 20000
+            }
+          }
+        }
+      }
+    },
+    {
+      "repeat": 5,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "matrix_multiply",
           "params": {
-            "size": 95
+            "size": 45
+          }
+        }
+      }
+    },
+    {
+      "repeat": 5,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "matrix_multiply",
+          "params": {
+            "size": 100
+          }
+        }
+      }
+    },
+    {
+      "repeat": 5,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "matrix_multiply",
+          "params": {
+            "size": 170
           }
         }
       }
     },
     {
       "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "matrix_multiply",
-          "params": {
-            "size": 110
-          }
-        }
-      }
-    },
-    {
-      "repeat": 7,
       "job": {
         "api_type": "compute",
         "params": {
@@ -119,7 +184,7 @@
       }
     },
     {
-      "repeat": 7,
+      "repeat": 6,
       "job": {
         "api_type": "compute",
         "params": {
@@ -137,7 +202,7 @@
         "params": {
           "task": "monte_carlo_pi",
           "params": {
-            "samples": 1200000
+            "samples": 1400000
           }
         }
       }
@@ -163,7 +228,7 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 12000
+              "count": 14000
             }
           }
         }
@@ -203,7 +268,7 @@
         "params": {
           "task": "matrix_multiply",
           "params": {
-            "size": 220
+            "size": 240
           }
         }
       }

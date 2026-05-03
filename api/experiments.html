@@ -153,6 +153,33 @@
 
         <div id="cluster-metrics" class="metric-grid"></div>
       </section>
+
+      <section class="card stack">
+        <div>
+          <h2>Prebuilt Class Project Suite</h2>
+          <p class="small">One click runs all 12 combinations: shortest_queue, random, round_robin, adaptive × light, heavy, mixed compute.</p>
+        </div>
+
+        <div class="detail-grid">
+          <div>
+            <label for="suite-id">Suite ID</label>
+            <input id="suite-id" type="text" placeholder="suite-2026-05-03-class-project" />
+          </div>
+          <div>
+            <label for="suite-submit-interval">Shared submission interval (ms)</label>
+            <input id="suite-submit-interval" type="number" min="0" step="1" value="250" />
+          </div>
+        </div>
+
+        <div>
+          <label for="suite-job-count">Optional jobs per run override</label>
+          <input id="suite-job-count" type="number" min="0" step="1" value="0" />
+          <div class="small">Leave at 0 to use each workload file’s built-in job count.</div>
+        </div>
+
+        <button id="start-suite-btn">Run all 12 preset experiments</button>
+        <div id="suite-list" class="jobs-list"></div>
+      </section>
     </div>
 
     <div class="grid" style="margin-top:20px;">
@@ -230,10 +257,16 @@
     const clusterMetrics = document.getElementById('cluster-metrics');
     const workersPanel = document.getElementById('workers-panel');
     const liveVisual = document.getElementById('live-visual');
+    const suiteIdInput = document.getElementById('suite-id');
+    const suiteSubmitIntervalInput = document.getElementById('suite-submit-interval');
+    const suiteJobCountInput = document.getElementById('suite-job-count');
+    const startSuiteBtn = document.getElementById('start-suite-btn');
+    const suiteList = document.getElementById('suite-list');
 
     let currentExperimentRunId = '';
     let currentClusterStatus = null;
     let pollTimer = null;
+    let suites = [];
 
     function pretty(data) { return JSON.stringify(data, null, 2); }
     function cap(text, fallback='Unknown') { return text ? text.replaceAll('_', ' ') : fallback; }
@@ -400,6 +433,35 @@
       renderExperiments(data.runs || []);
     }
 
+    async function fetchSuites() {
+      const res = await authFetch('/experiment-suites');
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      suites = data.suites || [];
+      renderSuites();
+    }
+
+    function renderSuites() {
+      if (!suites.length) {
+        suiteList.innerHTML = '<div class="empty">No preset suites launched yet.</div>';
+        return;
+      }
+      suiteList.innerHTML = suites.map(suite => {
+        const completedRuns = (suite.runs || []).filter(run => run.run_status === 'completed').length;
+        return `
+          <div class="job-item">
+            <div class="job-header">
+              <strong>${suite.suite_id}</strong>
+              <span class="pill ${statusClass(suite.status)}">${suite.status}</span>
+            </div>
+            <div class="small">${safe(completedRuns, 0)} / ${safe(suite.run_count, 12)} runs complete</div>
+            <div class="small">Interval: ${safe(suite.submit_interval_ms, 'n/a')} ms</div>
+            <div class="small">Started: ${safe(formatWhen(suite.started_at), 'not started')}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
     function renderExperiments(runs) {
       if (!runs.length) {
         experimentsList.innerHTML = '<div class="empty">No experiment runs yet.</div>';
@@ -482,6 +544,29 @@
       await fetchExperiments();
     }
 
+    async function startPresetSuite() {
+      const payload = {
+        suite_id: suiteIdInput.value.trim() || undefined,
+        submit_interval_ms: Number(suiteSubmitIntervalInput.value || 0),
+        job_count: Number(suiteJobCountInput.value || 0),
+      };
+      if (payload.submit_interval_ms < 0) {
+        alert('Submission interval must be 0 or greater');
+        return;
+      }
+      const res = await authFetch('/experiment-suites/class-project-routing-suite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(pretty(data));
+      suiteIdInput.value = data.suite_id;
+      showBanner(`Started preset suite ${data.suite_id}`, 'ok');
+      await fetchSuites();
+      await fetchExperiments();
+    }
+
     async function createExperiment() {
       const payload = {
         policy: experimentPolicy.value,
@@ -559,6 +644,7 @@
       await checkHealth();
       await fetchClusterStatus();
       await fetchExperiments();
+      await fetchSuites();
       if (currentExperimentRunId) {
         await loadExperiment(currentExperimentRunId, false);
       }
@@ -582,6 +668,7 @@
     }
 
     createExperimentBtn.addEventListener('click', () => createExperiment().catch(err => alert(String(err))));
+    startSuiteBtn.addEventListener('click', () => startPresetSuite().catch(err => alert(String(err))));
     startExperimentBtn.addEventListener('click', () => startExperiment().catch(err => alert(String(err))));
     deleteExperimentBtn.addEventListener('click', () => deleteExperiment().catch(err => alert(String(err))));
     refreshExperimentsBtn.addEventListener('click', () => fetchExperiments().catch(err => console.error(err)));

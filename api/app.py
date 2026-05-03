@@ -5,6 +5,7 @@ import mimetypes
 import os
 import random
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -23,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
 from common.storage import artifact_url, download_bytes, ensure_bucket_exists, upload_bytes
+from experiments.runner.presets import class_project_suite_definition
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT_NUM", "6379"))
@@ -789,6 +791,7 @@ def get_job_result(job_id: str, request: Request) -> dict:
 
 EXPERIMENTS_ROOT = MINI_DC_RUNS_ROOT
 RUNNER_DIR = REPO_ROOT / "experiments" / "runner"
+SUITES_ROOT = MINI_DC_RUNS_ROOT / "_suites"
 
 
 def ensure_experiments_runtime_available() -> None:
@@ -821,6 +824,12 @@ class ExperimentCreateRequest(BaseModel):
     notes: str = ""
     job_count: int = 0
     submit_interval_ms: int = 0
+
+
+class ExperimentSuiteCreateRequest(BaseModel):
+    suite_id: Optional[str] = None
+    submit_interval_ms: int = 250
+    job_count: int = 0
 
 
 def validate_run_id(run_id: str) -> str:
@@ -866,6 +875,39 @@ def list_experiment_artifacts(run_id: str) -> dict:
     return out
 
 
+def suite_manifest_path(suite_id: str) -> Path:
+    return SUITES_ROOT / suite_id / "suite_manifest.json"
+
+
+def read_suite_manifest(suite_id: str) -> dict:
+    manifest = suite_manifest_path(suite_id)
+    if not manifest.exists():
+        raise HTTPException(status_code=404, detail=f"experiment suite not found: {suite_id}")
+    return json.loads(manifest.read_text())
+
+
+def list_suite_manifests() -> list[dict]:
+    SUITES_ROOT.mkdir(parents=True, exist_ok=True)
+    suites = []
+    for manifest in sorted(SUITES_ROOT.glob("*/suite_manifest.json"), reverse=True):
+        suites.append(json.loads(manifest.read_text()))
+    return suites
+
+
+def launch_suite_runner(suite_id: str, submit_interval_ms: int, job_count: int) -> None:
+    ensure_experiments_runtime_available()
+    env = os.environ.copy()
+    env["MINI_DC_RUNS_ROOT"] = str(MINI_DC_RUNS_ROOT)
+    cmd = [
+        sys.executable,
+        str(RUNNER_DIR / "run_suite.py"),
+        "--suite-id", suite_id,
+        "--submit-interval-ms", str(submit_interval_ms),
+        "--job-count", str(job_count),
+    ]
+    subprocess.Popen(cmd, cwd=str(REPO_ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 @app.get("/experiments")
 def list_experiments(request: Request) -> dict:
     require_api_auth(request)
@@ -888,6 +930,43 @@ def list_experiments(request: Request) -> dict:
         run.get("run_id") or "",
     ), reverse=True)
     return {"runs": runs}
+
+
+@app.get("/experiment-presets")
+def get_experiment_presets(request: Request) -> dict:
+    require_api_auth(request)
+    return {"presets": [class_project_suite_definition()]}
+
+
+@app.get("/experiment-suites")
+def get_experiment_suites(request: Request) -> dict:
+    require_api_auth(request)
+    return {"suites": list_suite_manifests()}
+
+
+@app.get("/experiment-suites/{suite_id}")
+def get_experiment_suite(suite_id: str, request: Request) -> dict:
+    require_api_auth(request)
+    return read_suite_manifest(validate_run_id(suite_id))
+
+
+@app.post("/experiment-suites/class-project-routing-suite")
+def create_class_project_experiment_suite(request_data: ExperimentSuiteCreateRequest, request: Request) -> dict:
+    require_api_auth(request)
+    if request_data.submit_interval_ms < 0:
+        raise HTTPException(status_code=400, detail="submit_interval_ms must be 0 or greater")
+    suite_id = request_data.suite_id or f"suite-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+    suite_id = validate_run_id(suite_id)
+    if suite_manifest_path(suite_id).exists():
+        raise HTTPException(status_code=409, detail=f"suite already exists: {suite_id}")
+    launch_suite_runner(suite_id, request_data.submit_interval_ms, request_data.job_count)
+    return {
+        "suite_id": suite_id,
+        "status": "started",
+        "preset_id": "class-project-routing-suite",
+        "submit_interval_ms": request_data.submit_interval_ms,
+        "job_count": request_data.job_count,
+    }
 
 
 @app.get("/experiments/{run_id}")

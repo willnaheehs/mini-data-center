@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+from pathlib import Path
 from statistics import mean
 
 from common import manifest_path, read_json, write_json
@@ -28,6 +29,50 @@ def summarize_series(values: list[float]) -> dict:
         "max": max(values),
         "min": min(values),
     }
+
+
+def flatten_result_rows(manifest: dict, results_dir: Path) -> list[dict]:
+    rows = []
+    submission_records = manifest.get("submission_records", {}) or {}
+    for path in sorted(results_dir.glob("*.json")):
+        payload = read_json(path)
+        status = payload.get("status", {})
+        result = payload.get("result", {})
+        metrics = result.get("metrics", {})
+        runner_observation = payload.get("runner_observation", {})
+        result_body = result.get("result", {})
+        metadata = result.get("metadata", {})
+        job_id = result.get("job_id") or status.get("job_id")
+        job_request = (submission_records.get(job_id, {}) or {}).get("job_request", {})
+        params = job_request.get("params", {})
+        task_name = params.get("task") or result_body.get("task") or result.get("worker_job_type")
+
+        rows.append(
+            {
+                "run_id": manifest.get("run_id"),
+                "policy": manifest.get("policy_applied") or manifest.get("policy"),
+                "workload_file": manifest.get("workload_file"),
+                "job_type": result.get("job_type") or status.get("job_type"),
+                "worker_job_type": result.get("worker_job_type"),
+                "task": task_name,
+                "submission_interval_ms": manifest.get("submit_interval_ms_effective", manifest.get("submit_interval_ms")),
+                "job_id": job_id,
+                "status": result.get("status") or status.get("status"),
+                "target_worker": result.get("target_worker") or status.get("target_worker"),
+                "actual_worker": result.get("worker_name") or status.get("worker_name"),
+                "submitted_at": result.get("submitted_at") or status.get("submitted_at"),
+                "started_at": result.get("started_at") or status.get("started_at"),
+                "finished_at": result.get("finished_at") or status.get("finished_at"),
+                "runner_observed_total_time": runner_observation.get("runner_observed_total_time"),
+                "wait_time": metrics.get("wait_time"),
+                "service_time": metrics.get("service_time"),
+                "total_time": metrics.get("total_time"),
+                "cpu_temperature_celsius": metrics.get("cpu_temperature_celsius"),
+                "experiment_run": metadata.get("experiment_run"),
+                "result_summary": result.get("result_summary"),
+            }
+        )
+    return rows
 
 
 def main() -> None:
@@ -93,6 +138,7 @@ def main() -> None:
         "policy": manifest.get("policy"),
         "policy_applied": manifest.get("policy_applied") or manifest.get("policy"),
         "workload_file": manifest.get("workload_file"),
+        "job_type": "compute",
         "requested_job_count": manifest.get("job_count"),
         "expanded_job_count": manifest.get("expanded_job_count"),
         "submit_interval_ms_requested": manifest.get("submit_interval_ms"),
@@ -125,29 +171,46 @@ def main() -> None:
         }
 
     write_json(metrics_dir / "summary.json", summary)
-    with (metrics_dir / "summary.csv").open("w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["metric", "value"])
-        writer.writerow(["run_id", summary["run_id"]])
-        writer.writerow(["policy", summary["policy"]])
-        writer.writerow(["policy_applied", summary["policy_applied"]])
-        writer.writerow(["workload_file", summary["workload_file"]])
-        writer.writerow(["requested_job_count", summary["requested_job_count"]])
-        writer.writerow(["expanded_job_count", summary["expanded_job_count"]])
-        writer.writerow(["submit_interval_ms_requested", summary["submit_interval_ms_requested"]])
-        writer.writerow(["submit_interval_ms_effective", summary["submit_interval_ms_effective"]])
-        writer.writerow(["submission_pattern", summary["submission_pattern"]])
-        writer.writerow(["timestamp_start", summary["timestamp_start"]])
-        writer.writerow(["timestamp_end", summary["timestamp_end"]])
-        writer.writerow(["job_count", summary["job_count"]])
-        writer.writerow(["completed_count", summary["completed_count"]])
-        writer.writerow(["failed_count", summary["failed_count"]])
-        for metric in ["runner_observed_total_time", "service_time", "worker_total_time", "wait_time", "cpu_temperature_celsius"]:
-            if metric in summary:
-                writer.writerow([f"{metric}_avg", summary[metric]["avg"]])
-                writer.writerow([f"{metric}_p95", summary[metric]["p95"]])
-                writer.writerow([f"{metric}_max", summary[metric]["max"]])
-                writer.writerow([f"{metric}_min", summary[metric]["min"]])
+    detailed_rows = flatten_result_rows(manifest, results_dir)
+    if detailed_rows:
+        with (metrics_dir / "job_results_summary.csv").open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(detailed_rows[0].keys()))
+            writer.writeheader()
+            for row in detailed_rows:
+                writer.writerow(row)
+
+    run_summary_row = {
+        "run_id": summary["run_id"],
+        "policy": summary["policy"],
+        "policy_applied": summary["policy_applied"],
+        "workload_file": summary["workload_file"],
+        "job_type": summary["job_type"],
+        "requested_job_count": summary["requested_job_count"],
+        "expanded_job_count": summary["expanded_job_count"],
+        "submit_interval_ms_requested": summary["submit_interval_ms_requested"],
+        "submit_interval_ms_effective": summary["submit_interval_ms_effective"],
+        "submission_pattern": summary["submission_pattern"],
+        "timestamp_start": summary["timestamp_start"],
+        "timestamp_end": summary["timestamp_end"],
+        "job_count": summary["job_count"],
+        "completed_count": summary["completed_count"],
+        "failed_count": summary["failed_count"],
+        "runner_observed_total_time_avg": (summary.get("runner_observed_total_time") or {}).get("avg"),
+        "runner_observed_total_time_p95": (summary.get("runner_observed_total_time") or {}).get("p95"),
+        "service_time_avg": (summary.get("service_time") or {}).get("avg"),
+        "service_time_p95": (summary.get("service_time") or {}).get("p95"),
+        "worker_total_time_avg": (summary.get("worker_total_time") or {}).get("avg"),
+        "worker_total_time_p95": (summary.get("worker_total_time") or {}).get("p95"),
+        "wait_time_avg": (summary.get("wait_time") or {}).get("avg"),
+        "wait_time_p95": (summary.get("wait_time") or {}).get("p95"),
+        "cpu_temperature_avg": (summary.get("cpu_temperature_celsius") or {}).get("avg"),
+        "cpu_temperature_p95": (summary.get("cpu_temperature_celsius") or {}).get("p95"),
+    }
+    for name in ["run_summary.csv", "summary.csv"]:
+        with (metrics_dir / name).open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(run_summary_row.keys()))
+            writer.writeheader()
+            writer.writerow(run_summary_row)
 
     manifest["summary_status"] = "completed"
     write_json(manifest_file, manifest)
