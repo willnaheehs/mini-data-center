@@ -444,6 +444,40 @@ def count_primes(limit: int) -> int:
     return total
 
 
+def expand_sort_numbers(values_config: dict) -> list[int]:
+    count = max(1, int(values_config.get("count", 1)))
+    pattern = str(values_config.get("pattern", "descending")).strip().lower()
+
+    if pattern == "descending":
+        start = int(values_config.get("start", count))
+        step = int(values_config.get("step", -1))
+        if step == 0:
+            raise ValueError("sort_numbers values_config.step cannot be 0")
+        if step > 0:
+            step = -step
+        return [start + (step * index) for index in range(count)]
+
+    if pattern == "ascending":
+        start = int(values_config.get("start", 1))
+        step = int(values_config.get("step", 1))
+        if step == 0:
+            raise ValueError("sort_numbers values_config.step cannot be 0")
+        if step < 0:
+            step = abs(step)
+        return [start + (step * index) for index in range(count)]
+
+    if pattern == "random":
+        seed = int(values_config.get("seed", 42))
+        low = int(values_config.get("min", 0))
+        high = int(values_config.get("max", count))
+        if high < low:
+            raise ValueError("sort_numbers values_config.max must be >= min")
+        rng = random.Random(seed)
+        return [rng.randint(low, high) for _ in range(count)]
+
+    raise ValueError(f"unsupported sort_numbers values_config pattern: {pattern}")
+
+
 def process_compute_job(job: dict):
     params = job["params"]
     task = params["task"]
