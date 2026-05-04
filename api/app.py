@@ -368,13 +368,13 @@ def estimate_job_work_units(job_type: str | None, params: dict | None) -> float:
     return 1.0
 
 
-def get_recent_worker_rate_stats(limit: int = 200) -> tuple[dict[str, dict], float]:
+def get_recent_worker_rate_stats(limit: int = 160) -> tuple[dict[str, dict], float]:
     job_ids = r.zrevrange(JOB_INDEX_KEY, 0, max(0, limit - 1))
     stats: dict[str, dict] = {}
     total_service_seconds = 0.0
     total_work_units = 0.0
 
-    for job_id in job_ids:
+    for index, job_id in enumerate(job_ids):
         result_doc = redis_get_json(result_key(job_id)) or {}
         payload_doc = redis_get_json(payload_key(job_id)) or {}
         worker_name = result_doc.get("worker_name")
@@ -395,23 +395,30 @@ def get_recent_worker_rate_stats(limit: int = 200) -> tuple[dict[str, dict], flo
         if work_units <= 0:
             continue
         task_key = job_task_key(job_type, params)
+        recency_weight = 0.96 ** index
+        weighted_service = service_value * recency_weight
+        weighted_work_units = work_units * recency_weight
 
         worker_stats = stats.setdefault(worker_name, {
             "overall_service_seconds": 0.0,
             "overall_work_units": 0.0,
+            "overall_sample_count": 0.0,
             "tasks": {},
         })
-        worker_stats["overall_service_seconds"] += service_value
-        worker_stats["overall_work_units"] += work_units
+        worker_stats["overall_service_seconds"] += weighted_service
+        worker_stats["overall_work_units"] += weighted_work_units
+        worker_stats["overall_sample_count"] += 1.0
         task_stats = worker_stats["tasks"].setdefault(task_key, {
             "service_seconds": 0.0,
             "work_units": 0.0,
+            "sample_count": 0.0,
         })
-        task_stats["service_seconds"] += service_value
-        task_stats["work_units"] += work_units
+        task_stats["service_seconds"] += weighted_service
+        task_stats["work_units"] += weighted_work_units
+        task_stats["sample_count"] += 1.0
 
-        total_service_seconds += service_value
-        total_work_units += work_units
+        total_service_seconds += weighted_service
+        total_work_units += weighted_work_units
 
     default_seconds_per_unit = (total_service_seconds / total_work_units) if total_work_units > 0 else 0.00001
     for worker_name, worker_stats in stats.items():
@@ -439,10 +446,15 @@ def estimate_job_seconds_for_worker(
     work_units = estimate_job_work_units(job_type, params)
     task_key = job_task_key(job_type, params)
     worker_stats = worker_rate_stats.get(worker_name, {})
+    overall_seconds_per_unit = float(worker_stats.get("overall_seconds_per_unit", default_seconds_per_unit))
     task_stats = (worker_stats.get("tasks") or {}).get(task_key, {})
-    seconds_per_unit = task_stats.get("seconds_per_unit")
-    if seconds_per_unit is None:
-        seconds_per_unit = worker_stats.get("overall_seconds_per_unit", default_seconds_per_unit)
+    task_seconds_per_unit = task_stats.get("seconds_per_unit")
+    if task_seconds_per_unit is None:
+        seconds_per_unit = overall_seconds_per_unit
+    else:
+        sample_count = float(task_stats.get("sample_count", 0.0))
+        task_weight = min(0.9, max(0.35, sample_count / 6.0))
+        seconds_per_unit = (float(task_seconds_per_unit) * task_weight) + (overall_seconds_per_unit * (1.0 - task_weight))
     return work_units * max(float(seconds_per_unit), 0.00001)
 
 
