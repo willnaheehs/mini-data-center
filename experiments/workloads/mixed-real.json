@@ -7,91 +7,31 @@
   "workload_label": "mixed_compute",
   "job_groups": [
     {
-      "repeat": 6,
+      "repeat": 18,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "prime_count",
           "params": {
-            "n": 18000
+            "n": 8000
           }
         }
       }
     },
     {
-      "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "prime_count",
-          "params": {
-            "n": 40000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "prime_count",
-          "params": {
-            "n": 50000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "prime_count",
-          "params": {
-            "n": 95000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
+      "repeat": 16,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "monte_carlo_pi",
           "params": {
-            "samples": 80000
+            "samples": 40000
           }
         }
       }
     },
     {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "monte_carlo_pi",
-          "params": {
-            "samples": 250000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "monte_carlo_pi",
-          "params": {
-            "samples": 650000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
+      "repeat": 12,
       "job": {
         "api_type": "compute",
         "params": {
@@ -99,86 +39,59 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 1200
+              "count": 500
             }
           }
         }
       }
     },
     {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "sort_numbers",
-          "params": {
-            "values_config": {
-              "pattern": "descending",
-              "count": 5000
-            }
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "sort_numbers",
-          "params": {
-            "values_config": {
-              "pattern": "descending",
-              "count": 20000
-            }
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "matrix_multiply",
-          "params": {
-            "size": 45
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "matrix_multiply",
-          "params": {
-            "size": 100
-          }
-        }
-      }
-    },
-    {
-      "repeat": 5,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "matrix_multiply",
-          "params": {
-            "size": 170
-          }
-        }
-      }
-    },
-    {
-      "repeat": 6,
+      "repeat": 10,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "prime_count",
           "params": {
-            "n": 150000
+            "n": 60000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 8,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "monte_carlo_pi",
+          "params": {
+            "samples": 350000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 8,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "sort_numbers",
+          "params": {
+            "values_config": {
+              "pattern": "descending",
+              "count": 6000
+            }
+          }
+        }
+      }
+    },
+    {
+      "repeat": 8,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "matrix_multiply",
+          "params": {
+            "size": 90
           }
         }
       }
@@ -196,19 +109,7 @@
       }
     },
     {
-      "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "monte_carlo_pi",
-          "params": {
-            "samples": 1400000
-          }
-        }
-      }
-    },
-    {
-      "repeat": 6,
+      "repeat": 5,
       "job": {
         "api_type": "compute",
         "params": {
@@ -220,7 +121,7 @@
       }
     },
     {
-      "repeat": 6,
+      "repeat": 4,
       "job": {
         "api_type": "compute",
         "params": {
@@ -228,47 +129,44 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 14000
+              "count": 22000
             }
           }
         }
       }
     },
     {
-      "repeat": 6,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "sort_numbers",
-          "params": {
-            "values_config": {
-              "pattern": "descending",
-              "count": 18000
-            }
-          }
-        }
-      }
-    },
-    {
-      "repeat": 6,
+      "repeat": 3,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "matrix_multiply",
           "params": {
-            "size": 180
+            "size": 220
           }
         }
       }
     },
     {
-      "repeat": 6,
+      "repeat": 1,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "matrix_multiply",
           "params": {
-            "size": 240
+            "size": 320
+          }
+        }
+      }
+    },
+    {
+      "repeat": 1,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "monte_carlo_pi",
+          "params": {
+            "samples": 3500000
           }
         }
       }
