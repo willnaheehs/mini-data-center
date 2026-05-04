@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXPERIMENTS_ROOT = REPO_ROOT / "experiments"
 RUNS_ROOT = Path(os.getenv("MINI_DC_RUNS_ROOT", str(EXPERIMENTS_ROOT / "runs"))).resolve()
 DEFAULT_API_BASE = os.getenv("MINI_DC_API_BASE", "http://node1-control:30080")
+DEFAULT_API_TIMEOUT_SECONDS = float(os.getenv("MINI_DC_API_TIMEOUT_SECONDS", "120"))
 
 
 def utc_now_iso() -> str:
@@ -47,7 +48,7 @@ def api_request(method: str, path: str, payload: dict[str, Any] | None = None, a
       headers["Content-Type"] = "application/json"
     req = request.Request(base + path, data=data, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=30) as resp:
+        with request.urlopen(req, timeout=DEFAULT_API_TIMEOUT_SECONDS) as resp:
             body = resp.read().decode("utf-8")
             return json.loads(body) if body else {}
     except error.HTTPError as exc:

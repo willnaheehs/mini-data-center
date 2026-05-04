@@ -91,13 +91,15 @@ def main() -> None:
 
     submission_records = {}
     start_perf = time.perf_counter()
-    max_workers = min(32, max(1, len(expanded_jobs)))
+    max_workers = min(8, max(1, len(expanded_jobs)))
     futures = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         for index, job in enumerate(expanded_jobs):
             futures.append(executor.submit(submit_job_on_schedule, index, job, args.api_base, start_perf, submit_interval_ms))
 
-    submitted = [future.result() for future in futures]
+    submitted = []
+    for future in futures:
+        submitted.append(future.result())
     submitted.sort(key=lambda item: item["index"])
     submitted_job_ids = []
     for item in submitted:
