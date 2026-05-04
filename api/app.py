@@ -98,6 +98,25 @@ class JobCreateResponse(BaseModel):
     result_url: str
 
 
+class ExperimentBulkJobRequest(BaseModel):
+    api_type: Literal["compute", "ml", "file_process"]
+    params: Dict[str, Any]
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ExperimentBulkSubmitRequest(BaseModel):
+    policy: Literal["round_robin", "random", "shortest_queue", "adaptive", "power_of_two", "state_aware"]
+    jobs: list[ExperimentBulkJobRequest] = Field(..., min_length=1)
+    submit_interval_ms: int = 0
+
+
+class ExperimentBulkSubmitResponse(BaseModel):
+    policy_applied: str
+    submitted_jobs: int
+    submit_interval_ms_effective: int
+    submissions: list[Dict[str, Any]]
+
+
 class JobStatusResponse(BaseModel):
     job_id: str
     status: str
@@ -807,6 +826,47 @@ def create_job(request_data: JobCreateRequest, request: Request) -> JobCreateRes
     r.lpush(job["target_queue"], json.dumps(job))
     status_url, result_url = build_status_urls(job["job_id"])
     return JobCreateResponse(job_id=job["job_id"], status=job["status"], status_url=status_url, result_url=result_url)
+
+
+@app.post("/experiment-runs/submit-batch", response_model=ExperimentBulkSubmitResponse)
+def submit_experiment_batch(request_data: ExperimentBulkSubmitRequest, request: Request) -> ExperimentBulkSubmitResponse:
+    require_api_auth(request)
+    if request_data.submit_interval_ms < 0:
+        raise HTTPException(status_code=400, detail="submit_interval_ms must be 0 or greater")
+
+    policy = set_current_routing_policy(request_data.policy)
+    start_perf = time.perf_counter()
+    submissions = []
+
+    for index, experiment_job in enumerate(request_data.jobs):
+        target_perf = start_perf + ((request_data.submit_interval_ms / 1000.0) * index)
+        delay = target_perf - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
+
+        job_request = JobCreateRequest(
+            type=experiment_job.api_type,
+            params=experiment_job.params,
+            metadata={**experiment_job.metadata, "experiment_run": True},
+        )
+        job = normalize_job(job_request)
+        store_initial_job_state(job)
+        r.lpush(job["target_queue"], json.dumps(job))
+        submissions.append({
+            "index": index,
+            "job_id": job["job_id"],
+            "submitted_at": job["submitted_at"],
+            "scheduled_offset_ms": index * request_data.submit_interval_ms,
+            "target_worker": job["target_worker"],
+            "target_queue": job["target_queue"],
+        })
+
+    return ExperimentBulkSubmitResponse(
+        policy_applied=policy,
+        submitted_jobs=len(submissions),
+        submit_interval_ms_effective=request_data.submit_interval_ms,
+        submissions=submissions,
+    )
 
 
 @app.post("/jobs/file", response_model=JobCreateResponse)

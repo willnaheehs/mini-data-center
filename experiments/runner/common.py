@@ -57,4 +57,4 @@ def api_request(method: str, path: str, payload: dict[str, Any] | None = None, a
             detail = json.loads(body)
         except Exception:
             detail = {"error": body or str(exc)}
-        raise RuntimeError(f"API {method} {path} failed: {detail}") from exc
+        raise RuntimeError(f"API {method} {path} failed ({exc.code}): {detail}") from exc

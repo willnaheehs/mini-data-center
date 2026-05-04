@@ -69,6 +69,58 @@ def submit_job_on_schedule(index: int, job: dict, api_base: str, start_perf: flo
     }
 
 
+def submit_jobs_via_server_batch(expanded_jobs: list[dict], policy: str, submit_interval_ms: int, api_base: str | None):
+    payload = {
+        "policy": policy,
+        "submit_interval_ms": submit_interval_ms,
+        "jobs": [
+            {
+                "api_type": job["api_type"],
+                "params": job["params"],
+                "metadata": {"experiment_run": True},
+            }
+            for job in expanded_jobs
+        ],
+    }
+    response = api_request("POST", "/experiment-runs/submit-batch", payload=payload, api_base=api_base)
+    submitted = []
+    for item in response.get("submissions", []):
+        submitted.append({
+            "index": item["index"],
+            "job_id": item["job_id"],
+            "submitted_at_runner": None,
+            "submitted_at_wall": item.get("submitted_at"),
+            "scheduled_offset_ms": item.get("scheduled_offset_ms", item["index"] * submit_interval_ms),
+            "job": expanded_jobs[item["index"]],
+        })
+    return {
+        "policy_applied": response.get("policy_applied", policy),
+        "submit_interval_ms_effective": response.get("submit_interval_ms_effective", submit_interval_ms),
+        "submitted": submitted,
+        "submission_pattern": "server_bulk",
+    }
+
+
+def submit_jobs_via_client_requests(expanded_jobs: list[dict], policy: str, submit_interval_ms: int, api_base: str | None):
+    api_request("POST", "/routing-policy", payload={"policy": policy}, api_base=api_base)
+    start_perf = time.perf_counter()
+    max_workers = min(8, max(1, len(expanded_jobs)))
+    futures = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for index, job in enumerate(expanded_jobs):
+            futures.append(executor.submit(submit_job_on_schedule, index, job, api_base, start_perf, submit_interval_ms))
+
+    submitted = []
+    for future in futures:
+        submitted.append(future.result())
+    return {
+        "policy_applied": policy,
+        "submit_interval_ms_effective": submit_interval_ms,
+        "submitted": submitted,
+        "submission_pattern": "api_driven",
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
@@ -87,19 +139,16 @@ def main() -> None:
     submit_interval_ms = int(manifest.get("submit_interval_ms") or workload.get("submit_interval_ms", 0))
 
     policy = manifest["policy"]
-    api_request("POST", "/routing-policy", payload={"policy": policy}, api_base=args.api_base)
+
+    try:
+        submission_result = submit_jobs_via_server_batch(expanded_jobs, policy, submit_interval_ms, args.api_base)
+    except RuntimeError as exc:
+        if "failed (404)" not in str(exc):
+            raise
+        submission_result = submit_jobs_via_client_requests(expanded_jobs, policy, submit_interval_ms, args.api_base)
 
     submission_records = {}
-    start_perf = time.perf_counter()
-    max_workers = min(8, max(1, len(expanded_jobs)))
-    futures = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for index, job in enumerate(expanded_jobs):
-            futures.append(executor.submit(submit_job_on_schedule, index, job, args.api_base, start_perf, submit_interval_ms))
-
-    submitted = []
-    for future in futures:
-        submitted.append(future.result())
+    submitted = submission_result["submitted"]
     submitted.sort(key=lambda item: item["index"])
     submitted_job_ids = []
     for item in submitted:
@@ -113,11 +162,12 @@ def main() -> None:
 
     manifest["timestamp_start"] = utc_now_iso()
     manifest["run_status"] = "running"
-    manifest["policy_applied"] = policy
+    manifest["policy_applied"] = submission_result["policy_applied"]
     manifest["submitted_job_ids"] = submitted_job_ids
     manifest["job_count"] = len(submitted_job_ids)
     manifest["expanded_job_count"] = len(expanded_jobs)
-    manifest["submit_interval_ms_effective"] = submit_interval_ms
+    manifest["submit_interval_ms_effective"] = submission_result["submit_interval_ms_effective"]
+    manifest["submission_pattern"] = submission_result["submission_pattern"]
     manifest["submission_records"] = submission_records
     write_json(manifest_file, manifest)
 
@@ -125,8 +175,9 @@ def main() -> None:
         "run_id": args.run_id,
         "status": manifest["run_status"],
         "submitted_jobs": len(submitted_job_ids),
-        "policy_applied": policy,
-        "submit_interval_ms_effective": submit_interval_ms,
+        "policy_applied": submission_result["policy_applied"],
+        "submit_interval_ms_effective": submission_result["submit_interval_ms_effective"],
+        "submission_pattern": submission_result["submission_pattern"],
     }, indent=2))
 
 
