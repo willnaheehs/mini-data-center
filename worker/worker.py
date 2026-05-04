@@ -477,7 +477,15 @@ def process_compute_job(job: dict):
             else:
                 raise ValueError("sort_numbers requires params.values list or params.values_config")
         sorted_values = sorted(values)
-        result = {"task": task, "count": len(values), "sorted_values": sorted_values}
+        result = {
+            "task": task,
+            "count": len(values),
+            "min": sorted_values[0],
+            "max": sorted_values[-1],
+            "checksum": sum(sorted_values),
+            "first_values": sorted_values[:5],
+            "last_values": sorted_values[-5:],
+        }
         summary = f"sorted {len(values)} numbers"
     elif task == "matrix_multiply":
         size = int(task_params.get("size", 12))
