@@ -568,7 +568,7 @@ def choose_target(job_type: str | None = None, job_params: dict | None = None) -
 
     """Choose a worker using the active routing policy.
 
-    adaptive = alias of state_aware for experiment-set simplicity
+    adaptive = lowest predicted finish time using worker-specific runtime estimates
     state_aware = estimated completion time without thermal penalty
     """
     routing_policy = get_current_routing_policy()
@@ -622,9 +622,16 @@ def choose_target(job_type: str | None = None, job_params: dict | None = None) -
         return selected
 
     if routing_policy == "adaptive":
-        candidates.sort(key=lambda item: (item["estimated_completion_seconds"], item["queue_length"], item["worker_name"]))
+        candidates.sort(
+            key=lambda item: (
+                item["adaptive_score"],
+                item["estimated_completion_seconds"],
+                item["queue_length"],
+                item["worker_name"],
+            )
+        )
         selected = {**candidates[0], "policy": routing_policy}
-        selected["policy_detail"] = "adaptive_alias_of_state_aware"
+        selected["policy_detail"] = "lowest_predicted_finish_time"
         return selected
 
     raise HTTPException(status_code=500, detail=f"unsupported ROUTING_POLICY: {routing_policy}")
