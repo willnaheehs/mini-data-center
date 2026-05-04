@@ -7,7 +7,7 @@
   "workload_label": "mixed_compute",
   "job_groups": [
     {
-      "repeat": 18,
+      "repeat": 20,
       "job": {
         "api_type": "compute",
         "params": {
@@ -19,7 +19,7 @@
       }
     },
     {
-      "repeat": 16,
+      "repeat": 18,
       "job": {
         "api_type": "compute",
         "params": {
@@ -52,19 +52,19 @@
         "params": {
           "task": "prime_count",
           "params": {
-            "n": 60000
+            "n": 40000
           }
         }
       }
     },
     {
-      "repeat": 8,
+      "repeat": 10,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "monte_carlo_pi",
           "params": {
-            "samples": 350000
+            "samples": 220000
           }
         }
       }
@@ -78,7 +78,7 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 6000
+              "count": 3000
             }
           }
         }
@@ -91,7 +91,7 @@
         "params": {
           "task": "matrix_multiply",
           "params": {
-            "size": 90
+            "size": 95
           }
         }
       }
@@ -103,13 +103,25 @@
         "params": {
           "task": "prime_count",
           "params": {
-            "n": 220000
+            "n": 150000
           }
         }
       }
     },
     {
-      "repeat": 5,
+      "repeat": 4,
+      "job": {
+        "api_type": "compute",
+        "params": {
+          "task": "monte_carlo_pi",
+          "params": {
+            "samples": 900000
+          }
+        }
+      }
+    },
+    {
+      "repeat": 2,
       "job": {
         "api_type": "compute",
         "params": {
@@ -121,7 +133,7 @@
       }
     },
     {
-      "repeat": 4,
+      "repeat": 1,
       "job": {
         "api_type": "compute",
         "params": {
@@ -129,44 +141,20 @@
           "params": {
             "values_config": {
               "pattern": "descending",
-              "count": 22000
+              "count": 18000
             }
           }
         }
       }
     },
     {
-      "repeat": 3,
+      "repeat": 1,
       "job": {
         "api_type": "compute",
         "params": {
           "task": "matrix_multiply",
           "params": {
             "size": 220
-          }
-        }
-      }
-    },
-    {
-      "repeat": 1,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "matrix_multiply",
-          "params": {
-            "size": 320
-          }
-        }
-      }
-    },
-    {
-      "repeat": 1,
-      "job": {
-        "api_type": "compute",
-        "params": {
-          "task": "monte_carlo_pi",
-          "params": {
-            "samples": 3500000
           }
         }
       }
