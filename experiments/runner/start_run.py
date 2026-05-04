@@ -136,7 +136,11 @@ def main() -> None:
     workload = json.loads(workload_file.read_text())
     requested_job_count = int(manifest.get("job_count") or 0)
     expanded_jobs = expand_workload_jobs(workload, job_count_override=requested_job_count)
-    submit_interval_ms = int(manifest.get("submit_interval_ms") or workload.get("submit_interval_ms", 0))
+    manifest_submit_interval = manifest.get("submit_interval_ms")
+    if manifest_submit_interval is None:
+        submit_interval_ms = int(workload.get("submit_interval_ms", 0))
+    else:
+        submit_interval_ms = int(manifest_submit_interval)
 
     policy = manifest["policy"]
 
