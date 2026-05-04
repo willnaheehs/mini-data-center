@@ -2,6 +2,7 @@ import csv
 import json
 import math
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -470,7 +471,11 @@ def process_compute_job(job: dict):
     elif task == "sort_numbers":
         values = task_params.get("values")
         if not isinstance(values, list) or not values:
-            raise ValueError("sort_numbers requires params.values list")
+            values_config = task_params.get("values_config")
+            if isinstance(values_config, dict):
+                values = expand_sort_numbers(values_config)
+            else:
+                raise ValueError("sort_numbers requires params.values list or params.values_config")
         sorted_values = sorted(values)
         result = {"task": task, "count": len(values), "sorted_values": sorted_values}
         summary = f"sorted {len(values)} numbers"

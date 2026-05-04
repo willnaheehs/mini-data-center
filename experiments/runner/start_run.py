@@ -10,35 +10,6 @@ from pathlib import Path
 from common import REPO_ROOT, api_request, manifest_path, read_json, utc_now_iso, write_json
 
 
-def expand_sort_numbers(values_config: dict) -> list[int]:
-    count = int(values_config.get("count", 0))
-    if count <= 0:
-        raise ValueError("sort_numbers count must be positive")
-    pattern = values_config.get("pattern", "descending")
-    start = int(values_config.get("start", count))
-    if pattern == "descending":
-        return list(range(start, start - count, -1))
-    if pattern == "ascending":
-        return list(range(start, start + count))
-    if pattern == "random":
-        rng = random.Random(values_config.get("seed", 42))
-        values = list(range(start, start + count))
-        rng.shuffle(values)
-        return values
-    raise ValueError(f"unsupported sort_numbers pattern: {pattern}")
-
-
-def materialize_job(job: dict) -> dict:
-    expanded = copy.deepcopy(job)
-    params = expanded.get("params", {})
-    if params.get("task") == "sort_numbers":
-        task_params = params.setdefault("params", {})
-        values_config = task_params.pop("values_config", None)
-        if values_config and "values" not in task_params:
-            task_params["values"] = expand_sort_numbers(values_config)
-    return expanded
-
-
 def expand_workload_jobs(workload: dict, job_count_override: int = 0) -> list[dict]:
     if "job_groups" in workload:
         jobs = []
@@ -67,7 +38,7 @@ def expand_workload_jobs(workload: dict, job_count_override: int = 0) -> list[di
                 repeated.extend(copy.deepcopy(jobs))
             jobs = repeated[:job_count_override]
 
-    return [materialize_job(job) for job in jobs]
+    return copy.deepcopy(jobs)
 
 
 def submit_job(job: dict, api_base: str):
