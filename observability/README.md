@@ -1,17 +1,10 @@
 # Observability Stack
 
-This directory contains a first-pass host-based observability layer for the 3-node mini data center.
-
-## Goal
-
-Provide visibility into:
 - host health on all three nodes
 - centralized logs from the cluster nodes
 - a Grafana UI for dashboards
 - a Prometheus metrics backend
 - a Loki log backend
-
-## Topology
 
 ### Central stack (run on `node1-control`)
 - Grafana
@@ -44,8 +37,6 @@ Run the node collectors on:
 
 ## Notes
 
-- This is intentionally separate from the Kubernetes app manifests so it can merge cleanly later.
-- This first version is host-based via Docker Compose rather than deployed inside Kubernetes.
 - Node Exporter exposes host metrics to Prometheus.
 - Node Exporter textfile collector can expose custom host metrics such as CPU temperature from `lm-sensors`.
 - Promtail ships logs to Loki.
@@ -60,14 +51,3 @@ Default exposed ports on `node1-control`:
 
 Node Exporter on each node:
 - `9100`
-
-## Suggested next steps after config creation
-
-1. Bring up control-node stack on `node1-control`
-2. Bring up node collectors on each node
-3. Add Grafana datasources
-4. Add dashboards for:
-   - cluster overview
-   - node detail
-   - workload health
-5. Optionally add app-level metrics from dispatcher/worker output
