@@ -19,10 +19,3 @@ This directory holds the repeatable experiment workflow for the mini data center
 4. Summarize results with `runner/summarize_run.py`
 5. Capture screenshots with `scripts/capture_screenshots.sh`
 
-## Screenshot naming
-
-Screenshots should include the run id in the filename so every artifact is self-identifying.
-Examples:
-- `2026-04-24-light-round-robin-run01-cluster-overview.png`
-- `2026-04-24-light-round-robin-run01-node2-detail.png`
-- `2026-04-24-light-round-robin-run01-worker-execution.png`
