@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa
+id_ed25519
+secrets/
+secret*
+demo-output/
